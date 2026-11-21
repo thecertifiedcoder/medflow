@@ -36,6 +36,19 @@ This repository intentionally begins with specifications and the visual system. 
 
 No feature should be described as implemented until it exists in the running application and passes its acceptance tests. Use the status labels defined in `docs/00_START_HERE.md`.
 
+## Approved application stack
+
+- **Framework:** Next.js App Router
+- **Language:** TypeScript
+- **UI:** React with the approved HTML/CSS design system rebuilt as accessible components
+- **Backend:** Next.js Route Handlers
+- **Authentication:** Firebase Authentication
+- **Database/realtime:** Cloud Firestore
+- **AI:** Server-side Google Gemini API
+- **Deployment target:** A verified Node.js host, with Google Cloud Run as the current candidate
+
+Next.js is a fixed project requirement. Google AI Studio Build compatibility with this exact stack must be proven before implementation. If Build Mode cannot run Next.js, use it only as a coding/design assistant while preserving a genuine Next.js codebase and deploying through a compatible environment. Do not silently replace Next.js with Vite or plain React. See [`docs/08_TECHNICAL_ARCHITECTURE.md`](docs/08_TECHNICAL_ARCHITECTURE.md).
+
 ## Google AI Studio
 
 Google AI Studio Build mode supports importing an existing repository from the Add files (+) menu and supports GitHub sync. This repository is private; the GitHub account used by AI Studio must be authorised and the Google AI Studio GitHub App must be granted access to this repository. If it does not appear in the import picker, check the app's repository permissions rather than making the repository public by default.
