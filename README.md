@@ -53,7 +53,7 @@ Next.js is a fixed project requirement. Google AI Studio Build compatibility wit
 
 Google AI Studio Build mode supports importing an existing repository from the Add files (+) menu and supports GitHub sync. This repository is private; the GitHub account used by AI Studio must be authorised and the Google AI Studio GitHub App must be granted access to this repository. If it does not appear in the import picker, check the app's repository permissions rather than making the repository public by default.
 
-After importing, open `AI_STUDIO_MASTER_PROMPT.md` and provide its full contents to the Build agent. The prompt requires the agent to inspect the documents first, report its implementation plan and blockers, and wait for approval before coding.
+Start a **new Build Mode session**, select **Next.js** in Settings, then use Add files (+) → Import from GitHub to import `thecertifiedcoder/medflow` on `main`. Follow the session setup steps in `docs/11_IMPLEMENTATION_RUNBOOK.md`. After importing, provide the full `AI_STUDIO_MASTER_PROMPT.md` to the Build agent. It must inspect the documentation pack and return an implementation-readiness report before any code is written. Next.js support is confirmed in Google's March 18, 2026 announcement: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/.
 
 ## Hackathon constraints
 
