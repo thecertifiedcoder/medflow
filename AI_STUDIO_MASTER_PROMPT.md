@@ -8,6 +8,8 @@ You are the lead product engineer and implementation agent for **MedFlow**, a vo
 
 ## 1. Repository inspection is mandatory
 
+The required application framework is **Next.js App Router with TypeScript**. Treat this as an approved, fixed architecture decision. The compatibility gate in `docs/08_TECHNICAL_ARCHITECTURE.md` must be completed before implementation.
+
 Before proposing code changes, inspect the full repository and read every Markdown file in `docs/`, all files in `design-system/`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` and `SECURITY.md`. At minimum, pay particular attention to:
 
 - `docs/00_START_HERE.md` and `docs/01_HACKATHON_RULES_AND_SCORECARD.md`
@@ -83,11 +85,16 @@ Follow `docs/06_AI_EXTRACTION_SPEC.md`. Use AI only to organise the patient's ac
 
 ## 8. Technical implementation method
 
-- Inspect the current project files, available runtime and existing dependencies before choosing or replacing a stack. Do not assume that this documentation-only baseline already contains React, a Node server, Firebase or a database.
-- Follow `docs/08_TECHNICAL_ARCHITECTURE.md` and `docs/09_DATA_MODEL_AND_API_CONTRACTS.md`. Verify current AI Studio Build Mode support and official provider docs when making platform-specific decisions.
-- Keep API keys and service credentials server-side. Use AI Studio's server-side secrets mechanism where appropriate. Never hard-code secrets or expose them in browser code.
-- Verify the selected authentication/database approach and its permissions in the actual AI Studio preview/runtime. Do not assume Firebase Admin SDK, Firestore rules or server SDK behaviour without testing.
-- Enforce facility-level and staff-role authorisation on the server/database for every protected operation, not only in the interface.
+**The approved framework is Next.js with the App Router and TypeScript. This is a fixed project decision, not a suggestion.**
+
+- Use Next.js App Router for all application pages and Next.js Route Handlers under `app/api/**/route.ts` for backend endpoints. Do not substitute plain React/Vite, a separate Express server, or another framework.
+- Follow `docs/08_TECHNICAL_ARCHITECTURE.md` and `docs/09_DATA_MODEL_AND_API_CONTRACTS.md`. The architecture document defines the approved stack and the mandatory Google AI Studio compatibility gate.
+- Before coding, prove that the actual environment can build and run a Next.js App Router project, execute Route Handlers and provide server-only secrets. A generated React preview is not proof of Next.js support.
+- If Google AI Studio Build cannot run Next.js, report the exact blocker and propose a compatible workflow (for example, use AI Studio for code assistance while keeping the source as Next.js and building/deploying it on a verified Node.js host). Do not silently convert the project to Vite/React or change its backend architecture. Wait for founder approval before changing the stack.
+- Use Firebase Authentication for staff identity and Cloud Firestore for persistence/realtime data. Verify Firebase ID tokens and facility/role membership on the server for every protected operation. Firebase Authentication alone is not tenant authorization.
+- Use Firebase Admin SDK only in server-only modules and only after proving runtime compatibility. If the selected preview cannot support it, do not weaken security with broad client writes or expose credentials; report the blocker.
+- Keep Gemini API keys and Firebase Admin credentials server-side. Use the platform's server-side secrets mechanism only after verifying it works with the selected Next.js runtime.
+- Verify current official Gemini documentation for the transcription model ID, API, supported audio formats and limits. Do not use an outdated or guessed model ID.
 - Keep original submitted narrative, AI-generated draft and staff-corrected review distinct. Do not overwrite the source or erase prior audit history.
 - Use explicit typed interfaces, input validation, output schema validation, useful error states and idempotent operations where the data contract requires them.
 - Make AI/model dependencies injectable or isolated behind services so they can be tested with deterministic synthetic fixtures.
