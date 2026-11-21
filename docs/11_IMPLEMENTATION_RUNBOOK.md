@@ -89,7 +89,24 @@ Do not cut:
 
 Voice is an approved P0 requirement and must be tested early. If the Gemini transcription integration fails, troubleshoot the official API/SDK path or evaluate a genuinely functioning alternative transcription route. Never fake live transcription or present a manually entered transcript as if it came from the microphone. Keep typed intake usable while the voice issue is being fixed; disclose any unresolved voice limitation honestly.
 
-## 5. Working with Google AI Studio
+## 5. Starting the new Google AI Studio session
+
+The repository is a documentation/design-system baseline, not an existing application scaffold. Start a **new Build Mode session** and import the existing GitHub repository; do not create a replacement repository.
+
+1. Open Google AI Studio and enter **Build** mode.
+2. Open the Build **Settings** panel and select **Next.js** as the framework. Next.js is supported in AI Studio; it may not be the default. Do this before asking the agent to initialise the application.
+3. From the prompt input's **Add files (+)** menu, choose **Import from GitHub**.
+4. Select `thecertifiedcoder/medflow`, branch `main`. The repository is private, so ensure the GitHub connection/GitHub App has access to it. Do not make it public just to import it.
+5. Wait for the import to complete. Confirm the project documents and the complete `design-system/` directory are visible. Do not accept a partial import.
+6. Open `AI_STUDIO_MASTER_PROMPT.md` in the imported repository and provide its complete contents to the Build agent. The agent must read the whole documentation pack and return the implementation-readiness report described in section 13 of that prompt.
+7. Review its report. In particular, check that it selected Next.js, understands that the repo has no application scaffold yet, preserves all existing docs/design files, and has not edited application code.
+8. Confirm the planned Firebase/Auth/Firestore approach, server-side secrets, Gemini integration and first implementation milestone before authorising code changes.
+
+Google's official announcement confirms that Build Mode supports Next.js and that the framework is selected from Settings: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/
+
+**Sprint rule:** Product planning and the AI Studio import/readiness review can happen before the sprint. The implementation code must be created during the official sprint, November 22–24, 2026. On November 21, stop after the readiness review; do not begin application implementation early.
+
+## 6. Working with Google AI Studio
 
 - Give AI Studio the complete documentation pack and HTML design-system files.
 - Instruct it to read all documents before editing code.
@@ -100,7 +117,7 @@ Voice is an approved P0 requirement and must be tested early. If the Gemini tran
 - Keep the source repository synchronised and inspect actual Git diffs.
 - Update documentation when a technical choice changes; record the reason in the decision log.
 
-## 6. Daily close-out checklist
+## 7. Daily close-out checklist
 
 - [ ] Latest build runs.
 - [ ] P0 acceptance tests status recorded.
