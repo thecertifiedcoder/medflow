@@ -26,22 +26,29 @@ The application framework is **Next.js with the App Router**. This is an explici
 
 Do not silently change this stack. If a chosen platform cannot run the required Next.js App Router application or a required server capability, stop and report the exact incompatibility and options. Do not quietly substitute Vite/React, client-only Firebase writes, another backend framework or a different database. Any change requires founder approval and a corresponding documentation decision.
 
-## 3. Google AI Studio compatibility gate
+## 3. Google AI Studio and Next.js setup
 
-Google AI Studio Build may be used as the coding environment, but **its ability to create, preview, sync and deploy this exact Next.js App Router project must be demonstrated before implementation depends on it**.
+Google AI Studio Build supports **Next.js** in addition to React and Angular. Google's March 18, 2026 announcement says to select the desired framework from the updated Settings panel. MedFlow must use that selector to choose **Next.js**; do not leave the project on the React default.
 
-Before coding, the implementation agent must:
+Official confirmation: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/
 
-1. Inspect the current AI Studio Build Mode documentation and the imported repository/runtime.
-2. Determine whether Build Mode supports a real Next.js App Router project, including `next dev`/production build, `app/**/page.tsx`, `app/api/**/route.ts`, server-only environment secrets and the required Node.js runtime.
-3. Create or verify a minimal Next.js proof that builds and runs in the intended environment. Do not infer framework support from the fact that AI Studio can generate React interfaces.
-4. Verify Firebase Authentication token verification and the required Firestore server access pattern in Preview and in the intended deployment environment.
-5. Record the result, test evidence, limitations and deployment path in the sprint log and architecture notes.
+Before implementation, the agent must:
 
-If AI Studio Build cannot run or preserve Next.js, it may still be used for design, code generation or repository editing only if the resulting source remains a genuine Next.js project and can be built/deployed in a compatible environment. Do not force an incompatible preview to become the architecture. Report the blocker and wait for a decision.
+1. Confirm the imported workspace is in Build Mode and its framework setting is **Next.js**.
+2. Inspect the repository. The current GitHub repository is a documentation/design-system baseline; it intentionally does not yet contain an application scaffold or `package.json`.
+3. Initialise the application as a genuine Next.js App Router + TypeScript project, preserving all existing project documentation and design-system files.
+4. Verify the project uses Next.js scripts/dependencies and App Router files, and that the Build preview executes the Next.js app rather than a plain React/Vite scaffold.
+5. Verify Next.js Route Handlers, server-only environment secrets and Node.js runtime behaviour in the actual workspace before relying on them.
+6. Verify Firebase Authentication token verification and the Firestore server access pattern in Preview and the intended deployment environment.
+7. Record verified setup decisions, any remaining limitations and test evidence in the sprint log.
 
-Official references to verify at implementation time:
+If the Next.js option is missing from the framework selector or the imported workspace fails to run a genuine Next.js application, report the exact observed limitation and stop before replacing the framework. Do not silently substitute Vite/plain React or create a separate Express/Python backend. Any stack change requires founder approval and a corresponding documentation decision.
+
+The fact that AI Studio offers a server-side Node.js runtime and Firebase integration does not, by itself, prove that every Next.js server feature or Firebase Admin SDK operation works in Preview. Test the specific capabilities used by MedFlow rather than making assumptions.
+
+Official technical references:
 - Google AI Studio Build Mode: https://ai.google.dev/gemini-api/docs/aistudio-build-mode
+- Google announcement of Next.js support: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/
 - Next.js App Router: https://nextjs.org/docs/app
 - Next.js Route Handlers: https://nextjs.org/docs/app/getting-started/route-handlers
 - Firebase Admin SDK: https://firebase.google.com/docs/admin/setup
