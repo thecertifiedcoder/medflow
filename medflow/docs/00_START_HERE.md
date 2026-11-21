@@ -1,0 +1,88 @@
+# MedFlow — Documentation Start Here
+
+**Project codename:** MedFlow  
+**Working positioning:** Voice-first, AI-assisted clinical intake and nurse-controlled patient flow  
+**Competition:** TCC Hackathon 2026  
+**Documentation status:** Hackathon planning baseline; implementation must be verified against the running application.
+
+## 1. What this project is
+
+MedFlow helps a patient communicate a health concern through typed text or voice, converts that narrative into an editable transcript and an evidence-linked structured intake brief, and gives clinical staff a real-time queue in which they review the source information and assign/adjust workflow priority.
+
+**Core product loop:** Patient speaks or types → transcript is reviewed → patient submits → AI extracts structured context → staff reviews original evidence and extracted information → staff assigns priority and status → changes are auditable.
+
+MedFlow is not an AI doctor. It does not diagnose, prescribe, independently clear a patient to wait, or autonomously determine clinical urgency. In this hackathon prototype, priority is explicitly staff-assigned. AI-extracted cues are prompts for human review, not clinical conclusions.
+
+## 2. Hackathon objective
+
+Build a complete, credible, working end-to-end prototype that demonstrates a specific local workflow advantage. Do not attempt to build a full hospital management system.
+
+The strongest hackathon proposition is:
+
+> MedFlow turns the way patients naturally speak about their symptoms into evidence-linked clinical intake briefs that nurses can review, correct and use within a live patient-flow queue.
+
+Voice input is a first-class P0 feature, not a decorative extra. Typed entry remains available at every point.
+
+## 3. Mandatory reading order for AI Studio and contributors
+
+1. `01_HACKATHON_RULES_AND_SCORECARD.md`
+2. `02_PRODUCT_DEFINITION.md`
+3. `03_HACKATHON_WINNING_STRATEGY.md`
+4. `13_PRODUCT_REQUIREMENTS.md`
+5. `14_UX_AND_USER_FLOWS.md`
+6. `04_MVP_SCOPE_AND_ACCEPTANCE.md`
+7. `05_VOICE_INTAKE_SPEC.md`
+8. `06_AI_EXTRACTION_SPEC.md`
+9. `07_CLINICAL_SAFETY_AND_PRIVACY.md`
+10. `08_TECHNICAL_ARCHITECTURE.md`
+11. `09_DATA_MODEL_AND_API_CONTRACTS.md`
+12. `10_TESTING_AND_DEMO_PLAN.md`
+13. `11_IMPLEMENTATION_RUNBOOK.md`
+14. `12_REPOSITORY_AND_JUDGE_READINESS.md`
+15. `15_DECISIONS_AND_RISKS.md`
+16. `16_SOURCES_AND_ATTRIBUTIONS.md`
+17. `17_SPRINT_LOG_AND_AI_DISCLOSURE.md`
+
+The approved first visual baseline is in `design-system/medflow-design-system.html`, with companion tokens in `design-system/design-tokens.css` and implementation rules in `18_DESIGN_SYSTEM_SPEC.md`. Treat the HTML as the visual reference and the PRD/UX/safety/data documents as the authority for behaviour.
+
+## 4. Source-of-truth rules
+
+- The hackathon guide is authoritative for dates, eligibility, submission format and scoring.
+- The approved product documents are authoritative for scope and user behaviour.
+- The clinical safety document overrides any implementation suggestion that would make AI act as a clinician.
+- The PRD defines feature requirements and acceptance criteria.
+- The UX specification defines screen behaviour, user flows, interaction states and approved UI copy.
+- The data/API contract overrides ad hoc data structures in components.
+- If staff correction is implemented, the original AI brief must remain preserved separately from the staff-reviewed copy.
+- `design-system/medflow-design-system.html` and `design-system/design-tokens.css` are authoritative for visual decisions. `docs/18_DESIGN_SYSTEM_SPEC.md` defines how the reference is used.
+- If two documents conflict, do not silently choose one. Record the conflict in `15_DECISIONS_AND_RISKS.md` and ask for resolution.
+- Never invent completed features, test results, clinical validation, hospital partnerships, user numbers or performance claims.
+
+## 5. Build constraints
+
+- Code submitted for judging must be built during the official sprint, November 22–24, 2026.
+- Planning and product documentation can be prepared before the sprint.
+- Target: a demonstrable MVP by Sunday evening, November 22.
+- Submission deadline: Tuesday, November 24, 2026, 11:59 PM WAT.
+- The video must be public and 4:50–5:10 long.
+- Public repository and README must identify sprint-built features and disclose AI tools used.
+- Use synthetic patient data only in the hackathon demonstration. Do not enter real patient information or real patient audio.
+
+## 6. Current MVP boundary
+
+**P0:** typed intake, voice recording and transcription, transcript editing/confirmation, AI structured extraction, real-time staff queue, source-linked evidence, nurse review, staff-assigned priority/status, audit events, failure-safe submission, synthetic demo data, public deployment and a judge-ready repository.
+
+**P1 only after P0 works:** QR entry, patient search/filter, staff assignment, basic queue metrics, print/share intake summary.
+
+**Out of scope:** diagnosis, prescription, autonomous triage decisions, full EHR, billing, payments, complex hospital administration, production multi-hospital onboarding, live clinical use, unvalidated clinical scoring protocols.
+
+## 7. Delivery status convention
+
+Every feature in the repository and README must be labelled accurately as one of:
+
+- `Implemented and tested`
+- `Implemented, not fully tested`
+- `Prototype / simulated`
+- `Planned`
+
+Do not mark a feature complete because AI Studio generated code for it. It must work in the running application and pass its acceptance tests.

@@ -1,0 +1,51 @@
+/* MedFlow design tokens v0.1
+   Companion reference to medflow-design-system.html.
+   The HTML file contains an equivalent inline token set and remains standalone. */
+:root {
+  --mf-canvas: #f3f5f1;
+  --mf-surface: #ffffff;
+  --mf-surface-soft: #f7f9f6;
+  --mf-surface-inset: #edf1ec;
+  --mf-ink: #172c29;
+  --mf-ink-secondary: #344742;
+  --mf-muted: #66756f;
+  --mf-muted-secondary: #83908a;
+  --mf-line: #dfe6df;
+  --mf-line-strong: #cad5cc;
+  --mf-brand: #176d5c;
+  --mf-brand-strong: #105648;
+  --mf-brand-soft: #e3f0eb;
+  --mf-brand-tint: #f0f7f3;
+  --mf-accent: #c78b42;
+  --mf-accent-soft: #f7efdf;
+  --mf-info: #356c86;
+  --mf-info-soft: #eaf2f6;
+  --mf-success: #26745a;
+  --mf-success-soft: #e7f2eb;
+  --mf-warning: #98621d;
+  --mf-warning-soft: #fbf2df;
+  --mf-danger: #a34c42;
+  --mf-danger-soft: #f8eae7;
+  --mf-radius-xs: 6px;
+  --mf-radius-sm: 10px;
+  --mf-radius-md: 14px;
+  --mf-radius-lg: 20px;
+  --mf-radius-xl: 28px;
+  --mf-radius-pill: 999px;
+  --mf-space-1: 4px;
+  --mf-space-2: 8px;
+  --mf-space-3: 12px;
+  --mf-space-4: 16px;
+  --mf-space-5: 20px;
+  --mf-space-6: 24px;
+  --mf-space-8: 32px;
+  --mf-space-10: 40px;
+  --mf-space-12: 48px;
+  --mf-space-16: 64px;
+  --mf-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mf-font-display: Georgia, "Times New Roman", serif;
+  --mf-shadow-1: 0 1px 2px rgba(23,44,41,.05), 0 4px 14px rgba(23,44,41,.035);
+  --mf-shadow-2: 0 12px 34px rgba(23,44,41,.10);
+  --mf-shadow-3: 0 24px 60px rgba(23,44,41,.14);
+  --mf-focus: 0 0 0 3px rgba(23,109,92,.20);
+}
