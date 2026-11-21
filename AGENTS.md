@@ -34,8 +34,9 @@ If documents conflict, stop and report the conflict. Do not silently invent a re
 
 ## Implementation discipline
 
-- Inspect the existing repository and runtime before changing anything. Do not assume a framework, package manager, database or authentication setup.
-- Verify current Google AI Studio Build capabilities and official API documentation before choosing integrations or model IDs. Do not rely on stale assumptions in drafts.
+- The approved application framework is **Next.js App Router with TypeScript**. Use Next.js Route Handlers for backend endpoints; do not substitute Vite/plain React, Express or another framework without explicit founder approval.
+- Inspect the existing repository and runtime before changing anything. Prove that the intended environment supports the Next.js App Router, Route Handlers, production build and server-side secrets. If it does not, report the blocker and wait for a decision; do not silently change the stack.
+- Verify current Google AI Studio Build capabilities and official API documentation against the fixed Next.js architecture before implementation. A React preview is not proof of Next.js support. Do not rely on stale assumptions in drafts or guess Gemini model IDs.
 - Keep secrets server-side. Validate all model output against a strict schema before persistence or display. Treat model output as untrusted and non-authoritative.
 - Enforce facility/tenant and staff access in backend/database security controls, not merely by hiding UI elements.
 - Persist the intake before AI extraction; preserve a usable staff path when AI, transcription, network or storage-dependent services fail.
