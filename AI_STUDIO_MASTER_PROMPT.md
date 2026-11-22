@@ -157,3 +157,44 @@ Do **not** start implementing yet. First return a concise but complete implement
 Then stop and wait for founder approval to begin Milestone 1. Do not interpret importing this repository or receiving this prompt as approval to start implementation.
 
 **Execution principle:** Build the smallest complete, reliable, demonstrable version of the approved MedFlow workflow. Product integrity, patient safety, traceability and verified end-to-end behaviour take precedence over feature count or visual spectacle.
+
+
+---
+
+# Founder-approved update — 2026-11-22 (supersedes earlier visual and algorithm instructions)
+
+This addendum is authoritative wherever earlier sections of this prompt conflict with it.
+
+## A. New visual source of truth
+
+The founder has replaced the previous design system. The canonical visual reference is now `design-system/medflow-design-system.html`, with reusable product CSS in `design-system/design-tokens.css` and implementation rules in `docs/18_DESIGN_SYSTEM_SPEC.md`.
+
+- Read the full new HTML and the extracted CSS before changing UI.
+- Replace the previous palette, typography, tokens, components and visual styling. Do not keep the old visual system active.
+- Rebuild the new reference as accessible React components; do not iframe the HTML or copy its demo JavaScript.
+- Preserve the existing working Next.js, Firebase, Firestore Rules and staff authorization implementation.
+- The HTML contains simulated patient, staff, queue and audit interactions. They are design specimens, not live functionality.
+- The HTML also contains adult TEWS/SATS scoring UI, thresholds, clinical colour classifications, time targets and a scoring function. These are explicitly excluded from the MedFlow MVP. Do not implement them, even if the HTML's own implementation notes suggest copying them.
+- Product behaviour and safety remain governed by the PRD, UX, data/API contract and clinical safety documents.
+
+## B. Approved algorithm direction: Evidence Integrity Engine
+
+Read `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. The approved algorithm is deterministic source-evidence verification around Gemini's structured extraction.
+
+- Validate the candidate with strict Zod schemas.
+- Require source quotations for explicit evidence-bearing claims.
+- Search the exact immutable confirmed narrative; derive source spans server-side.
+- Assign field-level states: `exact_quote_match`, `missing_quote`, `quote_not_found`, `ambiguous_quote`.
+- Do not use fuzzy matching or model-supplied source offsets/statuses.
+- Bind the validated draft and evidence metadata to the exact narrative with a server-generated provenance envelope and HMAC-SHA-256 signature.
+- Explain that exact quote matching proves source location only, not semantic entailment, clinical truth or medical accuracy.
+- Do not produce an aggregate confidence score, diagnosis, clinical urgency, treatment recommendation, TEWS/SATS score or queue priority.
+- Keep original narrative, AI draft and staff-reviewed copy separate. Staff review remains mandatory.
+
+## C. Updated milestone boundaries
+
+- Milestone 1B is complete according to its Preview stop report. Founder still needs to complete manual facility/staff seeding and interactive Google Sign-In verification.
+- Milestone 1C is design-system migration only. Do not start it without separate founder approval.
+- Milestone 2 is patient typed/voice intake persistence and staff-triggered server-side Gemini extraction. Do not start it without separate founder approval.
+- Milestone 3 is the Evidence Integrity Engine implementation and verification. Do not start it without separate founder approval.
+- Do not expand a milestone or claim completion without actual tests and a stop report.
