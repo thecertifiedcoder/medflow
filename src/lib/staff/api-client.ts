@@ -1,6 +1,16 @@
 import {
+  CreateIntakeResponseSchema,
+  TranscribeAudioResponseSchema,
+  type CreateIntakeRequest,
+  type CreateIntakeResponse,
+  type StaffAssignedPriority,
+  type TranscribeAudioResponse,
+  type WorkflowStatus,
+} from "@/lib/schemas/intake";
+import {
   DemoLogoutResponseSchema,
   DemoStatusResponseSchema,
+  IntakeExtractionResponseSchema,
   PostgresStaffSessionResponseSchema,
   StaffAdminFacilityOverviewResponseSchema,
   StaffIntakeDetailResponseSchema,
@@ -8,155 +18,212 @@ import {
   type DemoLogoutResponse,
   type DemoPersona,
   type DemoStatusResponse,
+  type IntakeExtractionResponse,
   type PostgresStaffSessionResponse,
   type StaffAdminFacilityOverviewResponse,
+  type StaffBriefReviewRequest,
   type StaffIntakeDetailResponse,
+  type StaffPriorityMutationRequest,
   type StaffQueueResponse,
+  type StaffStatusMutationRequest,
 } from "@/lib/schemas/staff-api";
-import type {
-  StaffAssignedPriority,
-  WorkflowStatus,
-} from "@/lib/schemas/intake";
 
-export const DEMO_CSRF_HEADER_NAME = "X-MedFlow-Demo-Request";
+export const DEMO_CSRF_HEADER_NAME = "x-medflow-demo-csrf";
 export const DEMO_CSRF_HEADER_VALUE = "1";
+
+export type GetIdTokenFn = (forceRefresh?: boolean) => Promise<string | null>;
 
 export class StaffApiClientError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly isAuthExpired: boolean;
 
   constructor(status: number, code: string, message: string) {
     super(message);
     this.name = "StaffApiClientError";
     this.status = status;
     this.code = code;
-    this.isAuthExpired = status === 401;
+  }
+
+  get isAuthExpired(): boolean {
+    return (
+      this.status === 401 ||
+      this.code === "INVALID_OR_EXPIRED_TOKEN" ||
+      this.code === "DEMO_SESSION_EXPIRED" ||
+      this.code === "DEMO_SESSION_REVOKED" ||
+      this.code === "DEMO_SESSION_INVALID"
+    );
   }
 }
 
-export type GetBearerTokenFn = (forceRefresh?: boolean) => Promise<string | null>;
+function parseErrorBody(
+  status: number,
+  rawBody: unknown,
+  fallbackMessage: string,
+): StaffApiClientError {
+  if (
+    rawBody &&
+    typeof rawBody === "object" &&
+    "error" in rawBody &&
+    typeof (rawBody as { error?: unknown }).error === "object" &&
+    (rawBody as { error?: unknown }).error !== null
+  ) {
+    const errObj = (rawBody as { error: { code?: unknown; message?: unknown } })
+      .error;
+    const code =
+      typeof errObj.code === "string" && errObj.code.length > 0
+        ? errObj.code
+        : "API_REQUEST_FAILED";
+    const message =
+      typeof errObj.message === "string" && errObj.message.length > 0
+        ? errObj.message
+        : fallbackMessage;
+    return new StaffApiClientError(status, code, message);
+  }
+  return new StaffApiClientError(status, "API_REQUEST_FAILED", fallbackMessage);
+}
 
-interface AuthorizedFetchOptions {
-  readonly url: string;
-  readonly getIdToken: GetBearerTokenFn;
+async function performAuthenticatedRequest(options: {
+  readonly path: string;
+  readonly method: "GET" | "POST";
+  readonly getIdToken: GetIdTokenFn;
   readonly allowCookieFallback?: boolean;
+  readonly body?: unknown;
   readonly signal?: AbortSignal;
   readonly fetchImpl?: typeof fetch;
-}
-
-interface ParsedErrorResponse {
-  readonly error?: {
-    readonly code?: string;
-    readonly message?: string;
-  };
-}
-
-async function parseErrorBody(response: Response): Promise<{
-  code: string;
-  message: string;
-}> {
-  const body = (await response.json().catch(() => null)) as
-    | ParsedErrorResponse
-    | null;
-  const code =
-    typeof body?.error?.code === "string" && body.error.code.length > 0
-      ? body.error.code
-      : `HTTP_${response.status}`;
-  const message =
-    typeof body?.error?.message === "string" && body.error.message.length > 0
-      ? body.error.message
-      : response.status === 401
-        ? "Your clinical staff session has expired. Please sign in again."
-        : "Unable to complete the clinical data request right now.";
-  return { code, message };
-}
-
-/**
- * Executes an authenticated same-origin GET request using either:
- * - An active Firebase ID token (`Authorization: Bearer <token>`), retrying once
- *   with a forced Firebase token refresh on HTTP 401, OR
- * - A server-signed HTTP-only Hackathon Demo Mode session cookie (`credentials: "include"`)
- *   when no Firebase token is active and `allowCookieFallback` is enabled.
- */
-async function authorizedGetJson(
-  options: AuthorizedFetchOptions,
-): Promise<unknown> {
-  const doFetch = options.fetchImpl ?? fetch;
-  const allowCookieFallback = options.allowCookieFallback ?? true;
-
-  const initialToken = await options.getIdToken(false);
-
-  if (!initialToken) {
-    if (!allowCookieFallback) {
-      throw new StaffApiClientError(
-        401,
-        "SESSION_EXPIRED",
-        "Your clinical staff session has expired. Please sign in again.",
-      );
+}): Promise<unknown> {
+  const fetchFn = options.fetchImpl ?? fetch;
+  const executeAttempt = async (forceRefresh: boolean): Promise<Response> => {
+    const token = await options.getIdToken(forceRefresh);
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (options.method === "POST") {
+      headers["Content-Type"] = "application/json";
+    }
+    if (token && token.trim().length > 0) {
+      headers.Authorization = `Bearer ${token}`;
+    } else if (!options.allowCookieFallback) {
+      // Allow cookie-based demo session fallback whenever no Firebase token is active
     }
 
-    const cookieResponse = await doFetch(options.url, {
-      method: "GET",
+    return fetchFn(options.path, {
+      method: options.method,
+      headers,
       credentials: "include",
       cache: "no-store",
-      signal: options.signal,
+      ...(options.method === "POST"
+        ? { body: JSON.stringify(options.body ?? {}) }
+        : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
+  };
 
-    if (!cookieResponse.ok) {
-      const parsed = await parseErrorBody(cookieResponse);
-      throw new StaffApiClientError(
-        cookieResponse.status,
-        parsed.code,
-        parsed.message,
-      );
-    }
-
-    return cookieResponse.json();
-  }
-
-  let response = await doFetch(options.url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${initialToken}`,
-    },
-    credentials: "same-origin",
-    cache: "no-store",
-    signal: options.signal,
-  });
-
+  let response = await executeAttempt(false);
   if (response.status === 401) {
-    // Retry once with a freshly refreshed Firebase ID token in case the cached JWT expired.
     const refreshedToken = await options.getIdToken(true);
-    if (!refreshedToken) {
-      throw new StaffApiClientError(
-        401,
-        "SESSION_EXPIRED",
-        "Your clinical staff session has expired. Please sign in again.",
-      );
+    if (refreshedToken) {
+      response = await executeAttempt(true);
     }
-
-    response = await doFetch(options.url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${refreshedToken}`,
-      },
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: options.signal,
-    });
   }
 
+  const rawBody: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const parsed = await parseErrorBody(response);
-    throw new StaffApiClientError(response.status, parsed.code, parsed.message);
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      `Request to ${options.path} failed with HTTP ${response.status}.`,
+    );
   }
 
-  return response.json();
+  return rawBody;
 }
 
+// =============================================================================
+// Hackathon Demo Mode Client Helpers
+// =============================================================================
+
+export async function fetchDemoStatus(options?: {
+  readonly signal?: AbortSignal;
+}): Promise<DemoStatusResponse> {
+  const response = await fetch("/api/demo/status", {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+    cache: "no-store",
+    ...(options?.signal ? { signal: options.signal } : {}),
+  });
+
+  const rawBody: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      "Unable to check Hackathon Demo Mode status.",
+    );
+  }
+
+  return DemoStatusResponseSchema.parse(rawBody);
+}
+
+export async function createDemoSession(
+  persona: DemoPersona,
+): Promise<PostgresStaffSessionResponse> {
+  const endpoint =
+    persona === "admin"
+      ? "/api/demo/session/admin"
+      : "/api/demo/session/staff";
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
+    },
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  const rawBody: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      "Unable to start Hackathon Demo Mode session.",
+    );
+  }
+
+  return PostgresStaffSessionResponseSchema.parse(rawBody);
+}
+
+export async function logoutDemoSession(): Promise<DemoLogoutResponse> {
+  const response = await fetch("/api/demo/logout", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
+    },
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  const rawBody: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      "Unable to sign out of Hackathon Demo Mode.",
+    );
+  }
+
+  return DemoLogoutResponseSchema.parse(rawBody);
+}
+
+// =============================================================================
+// Staff Session, Queue, Detail & Admin Overview Helpers
+// =============================================================================
+
 export async function fetchStaffSession(options: {
-  readonly getIdToken: GetBearerTokenFn;
+  readonly getIdToken: GetIdTokenFn;
   readonly facilityId?: string | null;
   readonly allowCookieFallback?: boolean;
   readonly signal?: AbortSignal;
@@ -167,29 +234,22 @@ export async function fetchStaffSession(options: {
     params.set("facilityId", options.facilityId);
   }
   const qs = params.toString();
-  const url = qs ? `/api/staff/session?${qs}` : "/api/staff/session";
+  const path = qs ? `/api/staff/session?${qs}` : "/api/staff/session";
 
-  const raw = await authorizedGetJson({
-    url,
+  const rawBody = await performAuthenticatedRequest({
+    path,
+    method: "GET",
     getIdToken: options.getIdToken,
     allowCookieFallback: options.allowCookieFallback ?? true,
     signal: options.signal,
     fetchImpl: options.fetchImpl,
   });
 
-  const parsed = PostgresStaffSessionResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_SESSION_RESPONSE",
-      "Received an unexpected session verification response from the server.",
-    );
-  }
-  return parsed.data;
+  return PostgresStaffSessionResponseSchema.parse(rawBody);
 }
 
-export interface FetchStaffQueueParams {
-  readonly getIdToken: GetBearerTokenFn;
+export async function fetchStaffQueue(options: {
+  readonly getIdToken: GetIdTokenFn;
   readonly facilityId: string;
   readonly workflowStatus?: WorkflowStatus | "";
   readonly priority?: StaffAssignedPriority | "";
@@ -198,222 +258,211 @@ export interface FetchStaffQueueParams {
   readonly offset?: number;
   readonly signal?: AbortSignal;
   readonly fetchImpl?: typeof fetch;
-}
-
-export async function fetchStaffQueue(
-  params: FetchStaffQueueParams,
-): Promise<StaffQueueResponse> {
-  const query = new URLSearchParams();
-  query.set("facilityId", params.facilityId);
-  if (params.workflowStatus) {
-    query.set("workflowStatus", params.workflowStatus);
+}): Promise<StaffQueueResponse> {
+  const params = new URLSearchParams();
+  params.set("facilityId", options.facilityId);
+  if (options.workflowStatus) {
+    params.set("workflowStatus", options.workflowStatus);
   }
-  if (params.priority) {
-    query.set("priority", params.priority);
+  if (options.priority) {
+    params.set("priority", options.priority);
   }
-  if (params.includeCompleted) {
-    query.set("includeCompleted", "true");
+  if (options.includeCompleted !== undefined) {
+    params.set("includeCompleted", String(options.includeCompleted));
   }
-  if (typeof params.limit === "number") {
-    query.set("limit", String(params.limit));
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
   }
-  if (typeof params.offset === "number" && params.offset > 0) {
-    query.set("offset", String(params.offset));
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
   }
 
-  const raw = await authorizedGetJson({
-    url: `/api/staff/intakes?${query.toString()}`,
-    getIdToken: params.getIdToken,
-    signal: params.signal,
-    fetchImpl: params.fetchImpl,
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes?${params.toString()}`,
+    method: "GET",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
   });
 
-  const parsed = StaffQueueResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_QUEUE_RESPONSE",
-      "Received an unexpected queue payload from the server.",
-    );
-  }
-  return parsed.data;
+  return StaffQueueResponseSchema.parse(rawBody);
 }
 
-export interface FetchStaffIntakeDetailParams {
-  readonly getIdToken: GetBearerTokenFn;
+export async function fetchStaffIntakeDetail(options: {
+  readonly getIdToken: GetIdTokenFn;
   readonly facilityId: string;
   readonly intakeId: string;
   readonly signal?: AbortSignal;
   readonly fetchImpl?: typeof fetch;
-}
+}): Promise<StaffIntakeDetailResponse> {
+  const params = new URLSearchParams();
+  params.set("facilityId", options.facilityId);
 
-export async function fetchStaffIntakeDetail(
-  params: FetchStaffIntakeDetailParams,
-): Promise<StaffIntakeDetailResponse> {
-  const query = new URLSearchParams();
-  query.set("facilityId", params.facilityId);
-
-  const raw = await authorizedGetJson({
-    url: `/api/staff/intakes/${encodeURIComponent(params.intakeId)}?${query.toString()}`,
-    getIdToken: params.getIdToken,
-    signal: params.signal,
-    fetchImpl: params.fetchImpl,
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes/${encodeURIComponent(options.intakeId)}?${params.toString()}`,
+    method: "GET",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
   });
 
-  const parsed = StaffIntakeDetailResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_DETAIL_RESPONSE",
-      "Received an unexpected intake detail payload from the server.",
-    );
-  }
-  return parsed.data;
+  return StaffIntakeDetailResponseSchema.parse(rawBody);
 }
 
-export interface FetchStaffAdminFacilityOverviewParams {
-  readonly getIdToken: GetBearerTokenFn;
+export async function fetchStaffAdminFacilityOverview(options: {
+  readonly getIdToken: GetIdTokenFn;
   readonly facilityId: string;
   readonly signal?: AbortSignal;
   readonly fetchImpl?: typeof fetch;
-}
+}): Promise<StaffAdminFacilityOverviewResponse> {
+  const params = new URLSearchParams();
+  params.set("facilityId", options.facilityId);
 
-export async function fetchStaffAdminFacilityOverview(
-  params: FetchStaffAdminFacilityOverviewParams,
-): Promise<StaffAdminFacilityOverviewResponse> {
-  const query = new URLSearchParams();
-  query.set("facilityId", params.facilityId);
-
-  const raw = await authorizedGetJson({
-    url: `/api/staff/admin/facility?${query.toString()}`,
-    getIdToken: params.getIdToken,
-    signal: params.signal,
-    fetchImpl: params.fetchImpl,
-  });
-
-  const parsed = StaffAdminFacilityOverviewResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_ADMIN_OVERVIEW_RESPONSE",
-      "Received an unexpected administrator facility overview payload from the server.",
-    );
-  }
-  return parsed.data;
-}
-
-/**
- * Fetches server-evaluated Hackathon Demo Mode status (always HTTP 200) to
- * check availability and whether an active HTTP-only demo session cookie exists.
- */
-export async function fetchDemoStatus(
-  options: {
-    readonly signal?: AbortSignal;
-    readonly fetchImpl?: typeof fetch;
-  } = {},
-): Promise<DemoStatusResponse> {
-  const doFetch = options.fetchImpl ?? fetch;
-  const response = await doFetch("/api/demo/status", {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/admin/facility?${params.toString()}`,
     method: "GET",
-    credentials: "include",
-    cache: "no-store",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
     signal: options.signal,
+    fetchImpl: options.fetchImpl,
   });
 
-  if (!response.ok) {
-    const parsed = await parseErrorBody(response);
-    throw new StaffApiClientError(response.status, parsed.code, parsed.message);
-  }
-
-  const raw = await response.json();
-  const parsed = DemoStatusResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_DEMO_STATUS_RESPONSE",
-      "Received an unexpected demo status payload from the server.",
-    );
-  }
-  return parsed.data;
+  return StaffAdminFacilityOverviewResponseSchema.parse(rawBody);
 }
 
-/**
- * Establishes a fixed, server-controlled Hackathon Demo Mode session via an
- * HTTP-only signed cookie. Sends no role or facility body fields.
- */
-export async function createDemoSession(
-  persona: DemoPersona,
-  options: {
-    readonly signal?: AbortSignal;
-    readonly fetchImpl?: typeof fetch;
-  } = {},
-): Promise<PostgresStaffSessionResponse> {
-  const doFetch = options.fetchImpl ?? fetch;
-  const endpoint =
-    persona === "admin" ? "/api/demo/session/admin" : "/api/demo/session/staff";
+// =============================================================================
+// Milestone 2: Patient Submission, Audio Transcription & Staff Mutations
+// =============================================================================
 
-  const response = await doFetch(endpoint, {
+export async function submitPatientIntake(
+  payload: CreateIntakeRequest,
+): Promise<CreateIntakeResponse> {
+  const response = await fetch("/api/intakes", {
     method: "POST",
     headers: {
-      [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-    credentials: "include",
+    body: JSON.stringify(payload),
     cache: "no-store",
-    signal: options.signal,
   });
 
+  const rawBody: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const parsed = await parseErrorBody(response);
-    throw new StaffApiClientError(response.status, parsed.code, parsed.message);
-  }
-
-  const raw = await response.json();
-  const parsed = PostgresStaffSessionResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_DEMO_SESSION_RESPONSE",
-      "Received an unexpected demo session response from the server.",
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      "Failed to submit patient intake.",
     );
   }
-  return parsed.data;
+
+  return CreateIntakeResponseSchema.parse(rawBody);
 }
 
-/**
- * Revokes the active Hackathon Demo Mode session server-side and clears its
- * HTTP-only cookie.
- */
-export async function logoutDemoSession(
-  options: {
-    readonly signal?: AbortSignal;
-    readonly fetchImpl?: typeof fetch;
-  } = {},
-): Promise<DemoLogoutResponse> {
-  const doFetch = options.fetchImpl ?? fetch;
-
-  const response = await doFetch("/api/demo/logout", {
+export async function transcribePatientAudioRequest(params: {
+  readonly audioBase64: string;
+  readonly mimeType: string;
+}): Promise<TranscribeAudioResponse> {
+  const response = await fetch("/api/intakes/transcribe", {
     method: "POST",
     headers: {
-      [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-    credentials: "include",
+    body: JSON.stringify(params),
     cache: "no-store",
-    signal: options.signal,
   });
 
+  const rawBody: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const parsed = await parseErrorBody(response);
-    throw new StaffApiClientError(response.status, parsed.code, parsed.message);
-  }
-
-  const raw = await response.json();
-  const parsed = DemoLogoutResponseSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new StaffApiClientError(
-      502,
-      "INVALID_LOGOUT_RESPONSE",
-      "Received an unexpected logout response from the server.",
+    throw parseErrorBody(
+      response.status,
+      rawBody,
+      "Failed to transcribe patient voice recording.",
     );
   }
-  return parsed.data;
+
+  return TranscribeAudioResponseSchema.parse(rawBody);
+}
+
+export async function triggerIntakeExtraction(options: {
+  readonly getIdToken: GetIdTokenFn;
+  readonly intakeId: string;
+  readonly facilityId?: string;
+}): Promise<IntakeExtractionResponse> {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/intakes/${encodeURIComponent(options.intakeId)}/extract`,
+    method: "POST",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    body: options.facilityId ? { facilityId: options.facilityId } : {},
+  });
+
+  return IntakeExtractionResponseSchema.parse(rawBody);
+}
+
+export async function startStaffIntakeReviewRequest(options: {
+  readonly getIdToken: GetIdTokenFn;
+  readonly intakeId: string;
+  readonly facilityId?: string;
+}): Promise<StaffIntakeDetailResponse> {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes/${encodeURIComponent(options.intakeId)}/review`,
+    method: "POST",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    body: options.facilityId ? { facilityId: options.facilityId } : {},
+  });
+
+  return StaffIntakeDetailResponseSchema.parse(rawBody);
+}
+
+export async function submitStaffBriefReviewRequest(options: {
+  readonly getIdToken: GetIdTokenFn;
+  readonly intakeId: string;
+  readonly payload: StaffBriefReviewRequest;
+}): Promise<StaffIntakeDetailResponse> {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes/${encodeURIComponent(options.intakeId)}/brief-review`,
+    method: "POST",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    body: options.payload,
+  });
+
+  return StaffIntakeDetailResponseSchema.parse(rawBody);
+}
+
+export async function updateStaffPriorityRequest(options: {
+  readonly getIdToken: GetIdTokenFn;
+  readonly intakeId: string;
+  readonly payload: StaffPriorityMutationRequest;
+}): Promise<StaffIntakeDetailResponse> {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes/${encodeURIComponent(options.intakeId)}/priority`,
+    method: "POST",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    body: options.payload,
+  });
+
+  return StaffIntakeDetailResponseSchema.parse(rawBody);
+}
+
+export async function updateStaffWorkflowStatusRequest(options: {
+  readonly getIdToken: GetIdTokenFn;
+  readonly intakeId: string;
+  readonly payload: StaffStatusMutationRequest;
+}): Promise<StaffIntakeDetailResponse> {
+  const rawBody = await performAuthenticatedRequest({
+    path: `/api/staff/intakes/${encodeURIComponent(options.intakeId)}/status`,
+    method: "POST",
+    getIdToken: options.getIdToken,
+    allowCookieFallback: true,
+    body: options.payload,
+  });
+
+  return StaffIntakeDetailResponseSchema.parse(rawBody);
 }

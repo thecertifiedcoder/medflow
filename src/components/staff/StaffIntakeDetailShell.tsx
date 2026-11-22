@@ -16,24 +16,33 @@ import {
   EvidenceCard,
   Icon,
   PriorityLabel,
+  Select,
   SourceTag,
   Timeline,
   type BadgeTone,
   type TimelineEntry,
 } from "@/components/ui";
 import {
+  getAllowedStatusTransitions,
   WORKFLOW_PRIORITY_LABELS,
   WORKFLOW_STATUS_LABELS,
   type AuditAction,
   type ClinicalIntakeBrief,
+  type WorkflowStatus,
 } from "@/lib/schemas/intake";
 import type {
+  AssignableStaffPriority,
   EvidenceVerificationStatus,
   StaffIntakeDetailResponse,
 } from "@/lib/schemas/staff-api";
 import {
   fetchStaffIntakeDetail,
   StaffApiClientError,
+  startStaffIntakeReviewRequest,
+  submitStaffBriefReviewRequest,
+  triggerIntakeExtraction,
+  updateStaffPriorityRequest,
+  updateStaffWorkflowStatusRequest,
 } from "@/lib/staff/api-client";
 
 interface AuthorizedIntakeDetailProps extends AuthorizedStaffContext {
@@ -62,6 +71,81 @@ const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   brief_confirmed: "AI intake brief confirmed by staff",
   brief_corrected: "Staff-reviewed brief correction saved",
 };
+
+interface DerivedBriefEvidenceQuote {
+  readonly id: string;
+  readonly fieldPath: string;
+  readonly claimValue: string;
+  readonly sourceQuote: string;
+  readonly exactMatch: boolean;
+  readonly spanStart: number | null;
+  readonly spanEnd: number | null;
+}
+
+function deriveBriefEvidenceQuotes(
+  brief: ClinicalIntakeBrief | null,
+  confirmedNarrative: string,
+): DerivedBriefEvidenceQuote[] {
+  if (!brief) return [];
+  const results: DerivedBriefEvidenceQuote[] = [];
+
+  const checkQuote = (
+    id: string,
+    fieldPath: string,
+    claimValue: string,
+    quote: string | undefined,
+  ) => {
+    if (!quote || quote.trim().length === 0) return;
+    const trimmed = quote.trim();
+    const index = confirmedNarrative.indexOf(trimmed);
+    const exactMatch = index !== -1;
+    results.push({
+      id,
+      fieldPath,
+      claimValue,
+      sourceQuote: trimmed,
+      exactMatch,
+      spanStart: exactMatch ? index : null,
+      spanEnd: exactMatch ? index + trimmed.length : null,
+    });
+  };
+
+  checkQuote(
+    "chiefConcern",
+    "chiefConcern.sourceQuote",
+    brief.chiefConcern.value,
+    brief.chiefConcern.sourceQuote,
+  );
+
+  brief.symptoms.forEach((symptom, idx) => {
+    checkQuote(
+      `symptom-${idx}`,
+      `symptoms[${idx}].sourceQuote`,
+      symptom.value,
+      symptom.sourceQuote,
+    );
+  });
+
+  brief.relevantContext.forEach((ctx, idx) => {
+    checkQuote(
+      `context-${idx}`,
+      `relevantContext[${idx}].sourceQuote`,
+      ctx.value,
+      ctx.sourceQuote,
+    );
+  });
+
+  brief.reportedDetailsToReview.forEach((item, idx) => {
+    checkQuote(
+      `detail-${idx}`,
+      `reportedDetailsToReview[${idx}].sourceQuote`,
+      item.detail,
+      item.sourceQuote,
+    );
+  });
+
+  return results;
+}
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -212,6 +296,59 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
+  // Interactive clinical mutation states
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isMutatingBrief, setIsMutatingBrief] = useState(false);
+  const [isMutatingWorkflow, setIsMutatingWorkflow] = useState(false);
+  const [mutationFeedback, setMutationFeedback] = useState<{
+    readonly tone: "success" | "danger";
+    readonly message: string;
+  } | null>(null);
+
+  // Staff Brief Editor State
+  const [isEditingBrief, setIsEditingBrief] = useState(false);
+  const [editChiefConcern, setEditChiefConcern] = useState("");
+  const [editClinicianSummary, setEditClinicianSummary] = useState("");
+  const [editMissingUnclear, setEditMissingUnclear] = useState("");
+  const [editCorrectionNote, setEditCorrectionNote] = useState("");
+
+  // Priority & Status State
+  const [selectedPriority, setSelectedPriority] =
+    useState<AssignableStaffPriority>("priority_review");
+  const [priorityReasonInput, setPriorityReasonInput] = useState("");
+  const [statusReasonInput, setStatusReasonInput] = useState("");
+
+  const isClinicalReviewer =
+    activeFacility.role === "nurse" || activeFacility.role === "doctor";
+
+  const syncFormStateFromDetail = useCallback(
+    (loaded: StaffIntakeDetailResponse) => {
+      const currentBrief =
+        loaded.intake.staffReview.reviewedBrief ?? loaded.intake.aiDraft.brief;
+      if (currentBrief) {
+        setEditChiefConcern(currentBrief.chiefConcern.value);
+        setEditClinicianSummary(currentBrief.clinicianSummary);
+        setEditMissingUnclear(currentBrief.missingOrUnclear.join("\n"));
+      } else {
+        setEditChiefConcern(
+          loaded.intake.patientSource.confirmedNarrative.slice(0, 140),
+        );
+        setEditClinicianSummary(loaded.intake.patientSource.confirmedNarrative);
+        setEditMissingUnclear("");
+      }
+      setEditCorrectionNote(loaded.intake.staffReview.correctionNote ?? "");
+
+      const currentPrio = loaded.intake.workflow.staffAssignedPriority;
+      if (currentPrio !== "unassigned") {
+        setSelectedPriority(currentPrio);
+      } else {
+        setSelectedPriority("priority_review");
+      }
+      setPriorityReasonInput(loaded.intake.workflow.priorityReason ?? "");
+    },
+    [],
+  );
+
   const loadDetail = useCallback(() => {
     setLookupState("loading");
     setErrorMessage(null);
@@ -232,6 +369,7 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
         });
         if (cancelled) return;
         setDetail(response);
+        syncFormStateFromDetail(response);
         setErrorMessage(null);
         setLookupState("found");
       } catch (err) {
@@ -273,10 +411,325 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
     handleSessionExpired,
     intakeId,
     refreshNonce,
+    syncFormStateFromDetail,
   ]);
+
+  const handleRunOrRetryExtraction = async () => {
+    if (!isClinicalReviewer || isExtracting) return;
+    setIsExtracting(true);
+    setMutationFeedback(null);
+    try {
+      await triggerIntakeExtraction({
+        getIdToken,
+        intakeId,
+        facilityId: activeFacilityId,
+      });
+      const updated = await fetchStaffIntakeDetail({
+        getIdToken,
+        facilityId: activeFacilityId,
+        intakeId,
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setMutationFeedback({
+        tone: "success",
+        message: `Server-side Gemini extraction completed (${updated.intake.aiDraft.status.replaceAll("_", " ")}).`,
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to run Gemini extraction.",
+      });
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleConfirmBrief = async () => {
+    if (!isClinicalReviewer || isMutatingBrief) return;
+    setIsMutatingBrief(true);
+    setMutationFeedback(null);
+    try {
+      const updated = await submitStaffBriefReviewRequest({
+        getIdToken,
+        intakeId,
+        payload: {
+          action: "confirm",
+          facilityId: activeFacilityId,
+        },
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setIsEditingBrief(false);
+      setMutationFeedback({
+        tone: "success",
+        message:
+          "AI intake brief confirmed by clinical staff and recorded in the append-only audit trail.",
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to confirm AI brief.",
+      });
+    } finally {
+      setIsMutatingBrief(false);
+    }
+  };
+
+  const handleSaveCorrectedBrief = async () => {
+    if (!isClinicalReviewer || !detail || isMutatingBrief) return;
+
+    const trimmedConcern = editChiefConcern.trim();
+    const trimmedSummary = editClinicianSummary.trim();
+    const trimmedNote = editCorrectionNote.trim();
+
+    if (trimmedConcern.length < 3) {
+      setMutationFeedback({
+        tone: "danger",
+        message: "Chief concern summary must be at least 3 characters.",
+      });
+      return;
+    }
+    if (trimmedSummary.length < 5) {
+      setMutationFeedback({
+        tone: "danger",
+        message: "Clinician summary must be at least 5 characters.",
+      });
+      return;
+    }
+    if (trimmedNote.length < 3) {
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          "A correction note of at least 3 characters is required when saving a staff-reviewed copy.",
+      });
+      return;
+    }
+
+    const baseBrief: ClinicalIntakeBrief = detail.intake.staffReview
+      .reviewedBrief ??
+      detail.intake.aiDraft.brief ?? {
+        schemaVersion: "1.0",
+        chiefConcern: {
+          value: trimmedConcern,
+          certainty: "explicit",
+        },
+        symptoms: [],
+        relevantContext: [],
+        reportedDetailsToReview: [],
+        missingOrUnclear: [],
+        clinicianSummary: trimmedSummary,
+        limitations: [
+          "Staff-reviewed intake brief created directly by clinical reviewer.",
+        ],
+      };
+
+    const missingList = editMissingUnclear
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const updatedBrief: ClinicalIntakeBrief = {
+      ...baseBrief,
+      schemaVersion: "1.0",
+      chiefConcern: {
+        ...baseBrief.chiefConcern,
+        value: trimmedConcern,
+      },
+      missingOrUnclear: missingList,
+      clinicianSummary: trimmedSummary,
+      limitations:
+        baseBrief.limitations.length > 0
+          ? baseBrief.limitations
+          : ["Reviewed and updated by qualified clinical staff."],
+    };
+
+    setIsMutatingBrief(true);
+    setMutationFeedback(null);
+    try {
+      const updated = await submitStaffBriefReviewRequest({
+        getIdToken,
+        intakeId,
+        payload: {
+          action: "correct",
+          facilityId: activeFacilityId,
+          reviewedBrief: updatedBrief,
+          correctionNote: trimmedNote,
+        },
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setIsEditingBrief(false);
+      setMutationFeedback({
+        tone: "success",
+        message:
+          "Separate staff-reviewed brief saved in PostgreSQL while preserving the original AI draft and patient narrative.",
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to save staff-reviewed brief.",
+      });
+    } finally {
+      setIsMutatingBrief(false);
+    }
+  };
+
+  const handleStartReview = async () => {
+    if (!isClinicalReviewer || isMutatingWorkflow) return;
+    setIsMutatingWorkflow(true);
+    setMutationFeedback(null);
+    try {
+      const updated = await startStaffIntakeReviewRequest({
+        getIdToken,
+        intakeId,
+        facilityId: activeFacilityId,
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setMutationFeedback({
+        tone: "success",
+        message: "Clinical review started and logged in the audit trail.",
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to start review.",
+      });
+    } finally {
+      setIsMutatingWorkflow(false);
+    }
+  };
+
+  const handleSavePriority = async () => {
+    if (!isClinicalReviewer || !detail || isMutatingWorkflow) return;
+    const isPriorityChange =
+      detail.intake.workflow.staffAssignedPriority !== "unassigned";
+    const trimmedReason = priorityReasonInput.trim();
+
+    if (isPriorityChange && trimmedReason.length < 3) {
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          "A reason of at least 3 characters is required when changing an already-assigned operational priority.",
+      });
+      return;
+    }
+
+    setIsMutatingWorkflow(true);
+    setMutationFeedback(null);
+    try {
+      const updated = await updateStaffPriorityRequest({
+        getIdToken,
+        intakeId,
+        payload: {
+          facilityId: activeFacilityId,
+          priority: selectedPriority,
+          ...(trimmedReason.length > 0 ? { reason: trimmedReason } : {}),
+        },
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setMutationFeedback({
+        tone: "success",
+        message: `Operational priority updated to "${WORKFLOW_PRIORITY_LABELS[selectedPriority]}" and recorded in the audit trail.`,
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to update operational priority.",
+      });
+    } finally {
+      setIsMutatingWorkflow(false);
+    }
+  };
+
+  const handleTransitionStatus = async (nextStatus: WorkflowStatus) => {
+    if (!isClinicalReviewer || isMutatingWorkflow) return;
+    setIsMutatingWorkflow(true);
+    setMutationFeedback(null);
+    try {
+      const trimmedReason = statusReasonInput.trim();
+      const updated = await updateStaffWorkflowStatusRequest({
+        getIdToken,
+        intakeId,
+        payload: {
+          facilityId: activeFacilityId,
+          workflowStatus: nextStatus,
+          ...(trimmedReason.length > 0 ? { reason: trimmedReason } : {}),
+        },
+      });
+      setDetail(updated);
+      syncFormStateFromDetail(updated);
+      setStatusReasonInput("");
+      setMutationFeedback({
+        tone: "success",
+        message: `Workflow status transitioned to "${WORKFLOW_STATUS_LABELS[nextStatus]}".`,
+      });
+    } catch (err) {
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+      setMutationFeedback({
+        tone: "danger",
+        message:
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Failed to update workflow status.",
+      });
+    } finally {
+      setIsMutatingWorkflow(false);
+    }
+  };
 
   const intake = detail?.intake ?? null;
   const evidence = detail?.evidence ?? [];
+  const derivedBriefQuotes = intake
+    ? deriveBriefEvidenceQuotes(
+        intake.aiDraft.brief,
+        intake.patientSource.confirmedNarrative,
+      )
+    : [];
+  const allowedNextStatuses = intake
+    ? getAllowedStatusTransitions(intake.workflow.workflowStatus)
+    : [];
+
   const auditEntries: TimelineEntry[] = (detail?.auditEvents ?? []).map(
     (evt) => ({
       id: evt.id,
@@ -350,6 +803,19 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
             </ButtonLink>
           </div>
         </div>
+
+        {mutationFeedback && (
+          <Alert
+            tone={mutationFeedback.tone}
+            title={
+              mutationFeedback.tone === "success"
+                ? "Clinical workflow updated"
+                : "Action could not be completed"
+            }
+          >
+            {mutationFeedback.message}
+          </Alert>
+        )}
 
         {lookupState === "loading" && (
           <ClinicalPanel
@@ -510,6 +976,22 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
                   >
                     {intake.aiDraft.status.replaceAll("_", " ")}
                   </Badge>
+                  {isClinicalReviewer && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={isExtracting}
+                      disabled={isExtracting}
+                      onClick={() => void handleRunOrRetryExtraction()}
+                      data-testid="trigger-ai-extraction-btn"
+                    >
+                      <Icon name="refresh" size="sm" spin={isExtracting} />
+                      {intake.aiDraft.brief
+                        ? "Re-run Gemini Extraction"
+                        : "Run Gemini Extraction"}
+                    </Button>
+                  )}
                 </div>
               }
             >
@@ -529,7 +1011,7 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
                   }
                 >
                   {intake.aiDraft.status === "failed"
-                    ? "Automated intake structuring did not complete for this record. Review the patient's verbatim confirmed narrative above directly."
+                    ? "Automated intake structuring did not complete for this record. Review the patient's verbatim confirmed narrative above directly or use Run Gemini Extraction to retry."
                     : "No AI brief has been generated for this intake record yet."}
                 </Alert>
               )}
@@ -542,15 +1024,7 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
               title="Evidence quote provenance"
               subtitle="Deterministic verification checks exact quote location inside the confirmed narrative — never clinical truth."
             >
-              {evidence.length === 0 ? (
-                <Alert
-                  tone="info"
-                  title="No evidence rows recorded for this intake"
-                >
-                  Deterministic Evidence Integrity Engine rows appear here once
-                  evidence extraction runs.
-                </Alert>
-              ) : (
+              {evidence.length > 0 ? (
                 <ul className="m-0 grid list-none gap-3 p-0">
                   {evidence.map((item) => {
                     const statusMeta =
@@ -588,6 +1062,49 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
                     );
                   })}
                 </ul>
+              ) : derivedBriefQuotes.length > 0 ? (
+                <ul
+                  className="m-0 grid list-none gap-3 p-0"
+                  data-testid="derived-evidence-quote-list"
+                >
+                  {derivedBriefQuotes.map((item) => (
+                    <li
+                      key={item.id}
+                      className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-3"
+                    >
+                      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                        <span className="mf-mono text-[12px] font-semibold text-[var(--mf-text)]">
+                          {item.fieldPath}
+                        </span>
+                        <Badge tone={item.exactMatch ? "success" : "warning"}>
+                          {item.exactMatch
+                            ? "Exact verbatim quote match"
+                            : "Unverified quote"}
+                        </Badge>
+                      </div>
+                      <p className="mf-t-body-sm m-0 font-medium text-[var(--mf-text)]">
+                        {item.claimValue}
+                      </p>
+                      <blockquote className="mf-quote mt-2 !text-[13px]">
+                        &ldquo;{item.sourceQuote}&rdquo;
+                      </blockquote>
+                      {item.spanStart !== null && item.spanEnd !== null ? (
+                        <div className="mf-mono mt-1.5 text-[12px] text-[var(--mf-text-secondary)]">
+                          Narrative character span: [{item.spanStart},{" "}
+                          {item.spanEnd})
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Alert
+                  tone="info"
+                  title="No grounded source quotes extracted yet"
+                >
+                  Run Gemini extraction or inspect the patient-confirmed
+                  narrative directly above.
+                </Alert>
               )}
             </ClinicalPanel>
 
@@ -638,12 +1155,188 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
                   "Staff-reviewed copy",
                   "nurse",
                 )
+              ) : intake.staffReview.status === "confirmed" &&
+                intake.aiDraft.brief ? (
+                <Alert
+                  tone="success"
+                  title="AI draft confirmed by clinical staff"
+                >
+                  Clinical staff confirmed the structured AI brief above without
+                  modifications.
+                </Alert>
               ) : (
                 <Alert tone="info" title="Awaiting clinical staff review">
-                  No separate staff-reviewed copy has been saved for this
-                  intake. Interactive staff review and correction mutations
-                  activate in Milestone 2.
+                  Confirm the AI draft as accurate or edit and save a separate
+                  staff-reviewed copy below.
                 </Alert>
+              )}
+
+              {isClinicalReviewer ? (
+                <div className="grid gap-4 border-t border-[var(--mf-border)] pt-4">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {intake.aiDraft.brief && (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        loading={isMutatingBrief}
+                        disabled={isMutatingBrief}
+                        onClick={() => void handleConfirmBrief()}
+                        data-testid="confirm-brief-btn"
+                      >
+                        <Icon name="check" size="sm" />
+                        Confirm AI Brief as Accurate
+                      </Button>
+                    )}
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={isMutatingBrief}
+                      onClick={() => setIsEditingBrief((prev) => !prev)}
+                      data-testid="open-edit-brief-btn"
+                    >
+                      <Icon name="clipboard" size="sm" />
+                      {isEditingBrief
+                        ? "Close Brief Editor"
+                        : "Edit & Save Staff-Reviewed Copy"}
+                    </Button>
+                  </div>
+
+                  {isEditingBrief && (
+                    <div
+                      className="grid gap-3.5 rounded-[6px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4"
+                      data-testid="staff-brief-editor"
+                    >
+                      <div className="text-[14px] font-semibold text-[var(--mf-text)]">
+                        Create / Update Separate Staff-Reviewed Brief
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="edit-chief-concern"
+                          className="mf-label"
+                        >
+                          <span>Staff-reviewed chief concern</span>
+                          <span className="mf-label__req">Required</span>
+                        </label>
+                        <input
+                          id="edit-chief-concern"
+                          type="text"
+                          className="mf-input"
+                          maxLength={300}
+                          value={editChiefConcern}
+                          onChange={(e) => setEditChiefConcern(e.target.value)}
+                          data-testid="edit-chief-concern-input"
+                        />
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="edit-clinician-summary"
+                          className="mf-label"
+                        >
+                          <span>Staff-reviewed clinician summary</span>
+                          <span className="mf-label__req">Required</span>
+                        </label>
+                        <textarea
+                          id="edit-clinician-summary"
+                          className="mf-textarea"
+                          rows={3}
+                          maxLength={1200}
+                          value={editClinicianSummary}
+                          onChange={(e) =>
+                            setEditClinicianSummary(e.target.value)
+                          }
+                          data-testid="edit-clinician-summary-textarea"
+                        />
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="edit-missing-unclear"
+                          className="mf-label"
+                        >
+                          <span>
+                            Remaining missing or unclear items (one per line)
+                          </span>
+                          <span className="mf-label__req">Optional</span>
+                        </label>
+                        <textarea
+                          id="edit-missing-unclear"
+                          className="mf-textarea"
+                          rows={2}
+                          value={editMissingUnclear}
+                          onChange={(e) =>
+                            setEditMissingUnclear(e.target.value)
+                          }
+                          data-testid="edit-missing-unclear-textarea"
+                        />
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="edit-correction-note"
+                          className="mf-label"
+                        >
+                          <span>
+                            Mandatory audit reason / correction note (min 3
+                            chars)
+                          </span>
+                          <span className="mf-label__req">Required</span>
+                        </label>
+                        <input
+                          id="edit-correction-note"
+                          type="text"
+                          className="mf-input"
+                          maxLength={500}
+                          placeholder="e.g., Clarified symptom onset and medication dose during nurse check-in."
+                          value={editCorrectionNote}
+                          onChange={(e) =>
+                            setEditCorrectionNote(e.target.value)
+                          }
+                          data-testid="edit-correction-note-input"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          loading={isMutatingBrief}
+                          disabled={isMutatingBrief}
+                          onClick={() => void handleSaveCorrectedBrief()}
+                          data-testid="save-corrected-brief-btn"
+                        >
+                          <Icon name="check" size="sm" />
+                          Save Staff-Reviewed Copy
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="tertiary"
+                          size="sm"
+                          disabled={isMutatingBrief}
+                          onClick={() => setIsEditingBrief(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-3 text-[13px] text-[var(--mf-text-secondary)]"
+                  data-testid="admin-readonly-mutation-notice"
+                >
+                  <strong>Read-only Administrator Inspection:</strong> Signed in
+                  with role <code className="mf-mono">admin</code>. Clinical
+                  brief confirmation, corrections, and priority mutations are
+                  restricted to <code className="mf-mono">nurse</code> and{" "}
+                  <code className="mf-mono">doctor</code> roles.
+                </div>
               )}
             </ClinicalPanel>
 
@@ -683,6 +1376,161 @@ function AuthorizedIntakeDetail(props: AuthorizedIntakeDetailProps) {
                   </>
                 ) : null}
               </dl>
+
+              {isClinicalReviewer && (
+                <div className="grid gap-4 border-t border-[var(--mf-border)] pt-4">
+                  {/* Start Review Action */}
+                  {intake.workflow.workflowStatus === "new" && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-3">
+                      <span className="text-[13.5px] text-[var(--mf-text)]">
+                        Ready to begin reviewing this newly submitted intake?
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        loading={isMutatingWorkflow}
+                        disabled={isMutatingWorkflow}
+                        onClick={() => void handleStartReview()}
+                        data-testid="start-review-btn"
+                      >
+                        <Icon name="userCheck" size="sm" />
+                        Start Clinical Review
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Priority Assignment / Update Form */}
+                  <div className="grid gap-3 rounded-[6px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
+                    <div className="text-[14px] font-semibold text-[var(--mf-text)]">
+                      {intake.workflow.staffAssignedPriority === "unassigned"
+                        ? "Assign Operational Priority"
+                        : "Update Operational Priority (Reason Required)"}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="mf-field">
+                        <label htmlFor="priority-select" className="mf-label">
+                          <span>Operational review priority</span>
+                        </label>
+                        <Select
+                          id="priority-select"
+                          value={selectedPriority}
+                          onChange={(e) =>
+                            setSelectedPriority(
+                              e.target.value as AssignableStaffPriority,
+                            )
+                          }
+                          data-testid="priority-select"
+                        >
+                          <option value="immediate_review">
+                            {WORKFLOW_PRIORITY_LABELS.immediate_review}
+                          </option>
+                          <option value="priority_review">
+                            {WORKFLOW_PRIORITY_LABELS.priority_review}
+                          </option>
+                          <option value="routine_review">
+                            {WORKFLOW_PRIORITY_LABELS.routine_review}
+                          </option>
+                        </Select>
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="priority-reason-input"
+                          className="mf-label"
+                        >
+                          <span>Clinical / operational reason</span>
+                          <span className="mf-label__req">
+                            {intake.workflow.staffAssignedPriority ===
+                            "unassigned"
+                              ? "Recommended"
+                              : "Required (min 3 chars)"}
+                          </span>
+                        </label>
+                        <input
+                          id="priority-reason-input"
+                          type="text"
+                          className="mf-input"
+                          maxLength={500}
+                          placeholder="e.g., Exertional chest tightness requires prompt nurse evaluation"
+                          value={priorityReasonInput}
+                          onChange={(e) =>
+                            setPriorityReasonInput(e.target.value)
+                          }
+                          data-testid="priority-reason-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        loading={isMutatingWorkflow}
+                        disabled={isMutatingWorkflow}
+                        onClick={() => void handleSavePriority()}
+                        data-testid="save-priority-btn"
+                      >
+                        <Icon name="check" size="sm" />
+                        {intake.workflow.staffAssignedPriority === "unassigned"
+                          ? "Assign Priority"
+                          : "Update Priority"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Workflow Status Transitions */}
+                  {allowedNextStatuses.length > 0 && (
+                    <div className="grid gap-3 rounded-[6px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
+                      <div className="text-[14px] font-semibold text-[var(--mf-text)]">
+                        Transition Workflow Status
+                      </div>
+
+                      <div className="mf-field">
+                        <label
+                          htmlFor="status-reason-input"
+                          className="mf-label"
+                        >
+                          <span>Status transition note</span>
+                          <span className="mf-label__req">Optional</span>
+                        </label>
+                        <input
+                          id="status-reason-input"
+                          type="text"
+                          className="mf-input"
+                          maxLength={500}
+                          placeholder="e.g., Completed intake check-in and handed off to outpatient queue"
+                          value={statusReasonInput}
+                          onChange={(e) => setStatusReasonInput(e.target.value)}
+                          data-testid="status-reason-input"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        {allowedNextStatuses.map((nextStatus) => (
+                          <Button
+                            key={nextStatus}
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            loading={isMutatingWorkflow}
+                            disabled={isMutatingWorkflow}
+                            onClick={() =>
+                              void handleTransitionStatus(nextStatus)
+                            }
+                            data-testid={`transition-status-${nextStatus}`}
+                          >
+                            <Icon name="arrow" size="sm" />
+                            Move to {WORKFLOW_STATUS_LABELS[nextStatus]}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </ClinicalPanel>
 
             {/* 6. Append-Only Audit History */}

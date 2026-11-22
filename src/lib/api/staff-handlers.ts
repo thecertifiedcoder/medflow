@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import type { DemoSessionRevocationStore } from "@/lib/auth/demo-session";
 import {
   requireAuthorizedStaff,
@@ -12,37 +13,30 @@ import {
   type StaffRepository,
 } from "@/lib/db/staff-repository";
 import { assertServerRuntime } from "@/lib/env/server";
-import { AppHttpError, jsonError } from "@/lib/http/errors";
-import type { StaffRole } from "@/lib/schemas/intake";
+import { jsonError } from "@/lib/http/errors";
 import {
-  FacilityIdSchema,
-  IntakeIdParamSchema,
+  StaffAssignedPrioritySchema,
+  WorkflowStatusSchema,
+  type StaffAssignedPriority,
+  type StaffRole,
+  type WorkflowStatus,
+} from "@/lib/schemas/intake";
+import {
   PostgresStaffSessionResponseSchema,
-  STAFF_QUEUE_DEFAULT_LIMIT,
   StaffAdminFacilityOverviewResponseSchema,
+  StaffBriefReviewRequestSchema,
   StaffIntakeDetailResponseSchema,
-  StaffQueueQuerySchema,
+  StaffPriorityMutationRequestSchema,
   StaffQueueResponseSchema,
-  type PostgresStaffSessionResponse,
-  type StaffAdminFacilityOverviewResponse,
-  type StaffIntakeDetailResponse,
-  type StaffQueueQuery,
-  type StaffQueueResponse,
+  StaffStartReviewRequestSchema,
+  StaffStatusMutationRequestSchema,
 } from "@/lib/schemas/staff-api";
-
-export const ALL_CLINICAL_STAFF_ROLES: readonly StaffRole[] = [
-  "nurse",
-  "doctor",
-  "admin",
-];
-
-export const ADMIN_ONLY_ROLES: readonly StaffRole[] = ["admin"];
 
 export interface StaffHandlerDeps {
   readonly verifyToken?: VerifyTokenFn;
   readonly repository?: StaffRepository;
-  readonly now?: () => Date;
   readonly env?: Record<string, string | undefined>;
+  readonly now?: () => Date;
   readonly revocationStore?: DemoSessionRevocationStore;
 }
 
@@ -50,219 +44,244 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 } as const;
 
-function handleUnexpectedStaffApiError(error: unknown): NextResponse {
-  if (error instanceof StaffAuthorizationError) {
-    return jsonError(error.statusCode, error.errorCode, error.message);
-  }
-  if (error instanceof AppHttpError) {
-    return jsonError(error.status, error.code, error.publicMessage);
-  }
-  const safeDbError = toSafeDatabaseError(error);
-  return jsonError(
-    safeDbError.statusCode,
-    safeDbError.errorCode,
-    safeDbError.message,
-  );
+const FACILITY_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+const UUID_Schema = z.string().uuid();
+
+const ALLOWED_QUEUE_QUERY_KEYS = new Set([
+  "facilityId",
+  "workflowStatus",
+  "priority",
+  "includeCompleted",
+  "limit",
+  "offset",
+]);
+
+const ALL_STAFF_ROLES: readonly StaffRole[] = ["nurse", "doctor", "admin"];
+const CLINICAL_REVIEWER_ROLES: readonly StaffRole[] = ["nurse", "doctor"];
+const ADMIN_ONLY_ROLES: readonly StaffRole[] = ["admin"];
+
+export interface ParsedStaffQueueSearchParams {
+  readonly facilityId?: string;
+  readonly workflowStatus?: WorkflowStatus;
+  readonly priority?: StaffAssignedPriority;
+  readonly includeCompleted: boolean;
+  readonly limit: number;
+  readonly offset: number;
 }
 
-/**
- * Parses URLSearchParams for GET /api/staff/intakes strictly, rejecting unknown
- * or malformed values before any database call occurs.
- */
 export function parseStaffQueueSearchParams(
   searchParams: URLSearchParams,
 ):
-  | { readonly ok: true; readonly data: StaffQueueQuery }
+  | { readonly ok: true; readonly data: ParsedStaffQueueSearchParams }
   | { readonly ok: false; readonly message: string } {
-  const allowedKeys = new Set([
-    "facilityId",
-    "workflowStatus",
-    "priority",
-    "includeCompleted",
-    "limit",
-    "offset",
-  ]);
-
   for (const key of searchParams.keys()) {
-    if (!allowedKeys.has(key)) {
+    if (!ALLOWED_QUEUE_QUERY_KEYS.has(key)) {
       return {
         ok: false,
-        message: `Unsupported queue query parameter: "${key}".`,
+        message: `Unsupported query parameter "${key}".`,
       };
     }
   }
 
-  const rawFacilityId = searchParams.get("facilityId") ?? undefined;
-  const rawWorkflowStatus = searchParams.get("workflowStatus") ?? undefined;
-  const rawPriority = searchParams.get("priority") ?? undefined;
-  const rawIncludeCompleted = searchParams.get("includeCompleted");
-  const rawLimit = searchParams.get("limit");
-  const rawOffset = searchParams.get("offset");
+  const rawFacilityId = searchParams.get("facilityId")?.trim();
+  if (rawFacilityId !== undefined && rawFacilityId.length > 0) {
+    if (!FACILITY_ID_REGEX.test(rawFacilityId)) {
+      return {
+        ok: false,
+        message: "Invalid facilityId query parameter.",
+      };
+    }
+  }
+
+  let workflowStatus: WorkflowStatus | undefined;
+  const rawWorkflowStatus = searchParams.get("workflowStatus")?.trim();
+  if (rawWorkflowStatus !== undefined && rawWorkflowStatus.length > 0) {
+    const parsedStatus = WorkflowStatusSchema.safeParse(rawWorkflowStatus);
+    if (!parsedStatus.success) {
+      return {
+        ok: false,
+        message: "Invalid workflowStatus query parameter.",
+      };
+    }
+    workflowStatus = parsedStatus.data;
+  }
+
+  let priority: StaffAssignedPriority | undefined;
+  const rawPriority = searchParams.get("priority")?.trim();
+  if (rawPriority !== undefined && rawPriority.length > 0) {
+    const parsedPriority = StaffAssignedPrioritySchema.safeParse(rawPriority);
+    if (!parsedPriority.success) {
+      return {
+        ok: false,
+        message: "Invalid priority query parameter.",
+      };
+    }
+    priority = parsedPriority.data;
+  }
 
   let includeCompleted = false;
-  if (rawIncludeCompleted !== null) {
-    if (rawIncludeCompleted === "true") {
-      includeCompleted = true;
-    } else if (rawIncludeCompleted === "false") {
-      includeCompleted = false;
-    } else {
+  const rawIncludeCompleted = searchParams.get("includeCompleted")?.trim();
+  if (rawIncludeCompleted !== undefined && rawIncludeCompleted.length > 0) {
+    if (rawIncludeCompleted !== "true" && rawIncludeCompleted !== "false") {
       return {
         ok: false,
-        message: 'Query parameter "includeCompleted" must be "true" or "false".',
+        message: 'includeCompleted must be "true" or "false".',
       };
     }
+    includeCompleted = rawIncludeCompleted === "true";
   }
 
-  let limit = STAFF_QUEUE_DEFAULT_LIMIT;
-  if (rawLimit !== null) {
+  let limit = 25;
+  const rawLimit = searchParams.get("limit")?.trim();
+  if (rawLimit !== undefined && rawLimit.length > 0) {
     if (!/^\d+$/.test(rawLimit)) {
-      return {
-        ok: false,
-        message: 'Query parameter "limit" must be a positive integer.',
-      };
+      return { ok: false, message: "limit must be an integer between 1 and 100." };
     }
-    limit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    if (!Number.isFinite(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      return { ok: false, message: "limit must be an integer between 1 and 100." };
+    }
+    limit = parsedLimit;
   }
 
   let offset = 0;
-  if (rawOffset !== null) {
+  const rawOffset = searchParams.get("offset")?.trim();
+  if (rawOffset !== undefined && rawOffset.length > 0) {
     if (!/^\d+$/.test(rawOffset)) {
-      return {
-        ok: false,
-        message: 'Query parameter "offset" must be a non-negative integer.',
-      };
+      return { ok: false, message: "offset must be a non-negative integer." };
     }
-    offset = Number.parseInt(rawOffset, 10);
+    const parsedOffset = Number.parseInt(rawOffset, 10);
+    if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
+      return { ok: false, message: "offset must be a non-negative integer." };
+    }
+    offset = parsedOffset;
   }
 
-  const parsed = StaffQueueQuerySchema.safeParse({
-    facilityId: rawFacilityId,
-    workflowStatus: rawWorkflowStatus,
-    priority: rawPriority,
-    includeCompleted,
-    limit,
-    offset,
-  });
+  return {
+    ok: true,
+    data: {
+      ...(rawFacilityId ? { facilityId: rawFacilityId } : {}),
+      ...(workflowStatus ? { workflowStatus } : {}),
+      ...(priority ? { priority } : {}),
+      includeCompleted,
+      limit,
+      offset,
+    },
+  };
+}
 
-  if (!parsed.success) {
-    return {
-      ok: false,
-      message: "One or more queue query parameters are invalid.",
-    };
+function handleStaffRouteError(error: unknown): NextResponse {
+  if (error instanceof StaffAuthorizationError) {
+    return jsonError(error.statusCode, error.errorCode, error.message);
   }
-
-  return { ok: true, data: parsed.data };
+  const safeDb = toSafeDatabaseError(error);
+  return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message);
 }
 
 /**
- * Core handler for GET /api/staff/session.
- * Verifies Firebase ID token or Hackathon Demo cookie server-side and resolves
- * staff profile & active facility membership authoritatively from Neon PostgreSQL.
+ * GET /api/staff/session
  */
 export async function handleStaffSessionGet(
-  request: {
-    readonly authorizationHeader: string | null;
-    readonly cookieHeader?: string | null;
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
     readonly searchParams: URLSearchParams;
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
 
-  const rawFacilityId = request.searchParams.get("facilityId");
-  let requestedFacilityId: string | null = null;
-  if (rawFacilityId !== null && rawFacilityId.trim().length > 0) {
-    const parsedFacility = FacilityIdSchema.safeParse(rawFacilityId);
-    if (!parsedFacility.success) {
-      return jsonError(
-        400,
-        "INVALID_FACILITY_ID",
-        "The requested facility identifier format is invalid.",
-      );
-    }
-    requestedFacilityId = parsedFacility.data;
+  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+    return jsonError(
+      400,
+      "INVALID_QUERY_PARAMS",
+      "Invalid facilityId query parameter.",
+    );
   }
 
   try {
     const resolution = await resolveStaffSession({
-      authorizationHeader: request.authorizationHeader,
-      cookieHeader: request.cookieHeader,
-      requestedFacilityId,
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: rawFacilityId ?? null,
       strictFacilityMatch: false,
       verifyToken: deps.verifyToken,
-      repository: deps.repository ?? createDrizzleStaffRepository(),
+      repository: deps.repository,
       env: deps.env,
       now: deps.now,
       revocationStore: deps.revocationStore,
     });
 
-    const base = {
-      authenticated: true as const,
-      verifiedByServer: true as const,
-      authMode: resolution.authMode,
-      demoPersona: resolution.demoPersona,
-      sessionExpiresAt: resolution.sessionExpiresAt,
-      projectId: resolution.token.projectId,
-      authorizationModel: "neon_postgres_server_rbac" as const,
-      user: {
-        uid: resolution.token.uid,
-        email: resolution.token.email,
-        emailVerified: true as const,
-        displayName: resolution.token.displayName,
-      },
-    };
-
-    let payload: PostgresStaffSessionResponse;
     if (resolution.status === "authorized") {
-      payload = PostgresStaffSessionResponseSchema.parse({
-        ...base,
+      const payload = PostgresStaffSessionResponseSchema.parse({
+        authenticated: true,
+        verifiedByServer: true,
+        authMode: resolution.authMode,
+        demoPersona: resolution.demoPersona,
+        sessionExpiresAt: resolution.sessionExpiresAt,
+        projectId: resolution.token.projectId,
+        authorizationModel: "neon_postgres_server_rbac",
+        user: {
+          uid: resolution.token.uid,
+          email: resolution.token.email,
+          emailVerified: resolution.token.emailVerified,
+          displayName: resolution.token.displayName,
+        },
         authorizationStatus: "authorized",
         staffProfile: resolution.staffProfile,
         activeFacility: resolution.activeFacility,
       });
-    } else if (resolution.status === "unprovisioned") {
-      payload = PostgresStaffSessionResponseSchema.parse({
-        ...base,
-        authorizationStatus: "unprovisioned",
-        staffProfile: null,
-        activeFacility: null,
-        message: resolution.message,
-      });
-    } else {
-      payload = PostgresStaffSessionResponseSchema.parse({
-        ...base,
-        authorizationStatus: "inactive",
-        staffProfile: null,
-        activeFacility: null,
-        message: resolution.message,
+
+      return NextResponse.json(payload, {
+        status: 200,
+        headers: NO_STORE_HEADERS,
       });
     }
+
+    const payload = PostgresStaffSessionResponseSchema.parse({
+      authenticated: true,
+      verifiedByServer: true,
+      authMode: "firebase",
+      demoPersona: null,
+      sessionExpiresAt: null,
+      projectId: resolution.token.projectId,
+      authorizationModel: "neon_postgres_server_rbac",
+      user: {
+        uid: resolution.token.uid,
+        email: resolution.token.email,
+        emailVerified: resolution.token.emailVerified,
+        displayName: resolution.token.displayName,
+      },
+      authorizationStatus: resolution.status,
+      staffProfile: null,
+      activeFacility: null,
+      message: resolution.message,
+    });
 
     return NextResponse.json(payload, {
       status: 200,
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleUnexpectedStaffApiError(error);
+    return handleStaffRouteError(error);
   }
 }
 
 /**
- * Core handler for GET /api/staff/intakes.
- * Enforces Firebase identity or Demo session + PostgreSQL facility membership
- * and returns only bounded queue summaries for the authenticated staff member's verified facility.
+ * GET /api/staff/intakes
  */
 export async function handleStaffQueueGet(
-  request: {
-    readonly authorizationHeader: string | null;
-    readonly cookieHeader?: string | null;
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
     readonly searchParams: URLSearchParams;
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
 
-  const parsedQuery = parseStaffQueueSearchParams(request.searchParams);
+  const parsedQuery = parseStaffQueueSearchParams(input.searchParams);
   if (!parsedQuery.ok) {
     return jsonError(400, "INVALID_QUERY_PARAMS", parsedQuery.message);
   }
@@ -271,12 +290,12 @@ export async function handleStaffQueueGet(
   const now = deps.now ?? (() => new Date());
 
   try {
-    const authContext = await requireAuthorizedStaff({
-      authorizationHeader: request.authorizationHeader,
-      cookieHeader: request.cookieHeader,
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
       requestedFacilityId: parsedQuery.data.facilityId ?? null,
       strictFacilityMatch: true,
-      allowedRoles: ALL_CLINICAL_STAFF_ROLES,
+      allowedRoles: ALL_STAFF_ROLES,
       verifyToken: deps.verifyToken,
       repository,
       env: deps.env,
@@ -285,7 +304,7 @@ export async function handleStaffQueueGet(
     });
 
     const result = await repository.listFacilityIntakes({
-      facilityId: authContext.activeFacility.facilityId,
+      facilityId: authSession.activeFacility.facilityId,
       workflowStatus: parsedQuery.data.workflowStatus,
       priority: parsedQuery.data.priority,
       includeCompleted: parsedQuery.data.includeCompleted,
@@ -293,14 +312,15 @@ export async function handleStaffQueueGet(
       offset: parsedQuery.data.offset,
     });
 
-    const payload: StaffQueueResponse = StaffQueueResponseSchema.parse({
-      facility: authContext.activeFacility,
+    const payload = StaffQueueResponseSchema.parse({
+      facility: authSession.activeFacility,
       items: result.items,
       pagination: {
         limit: parsedQuery.data.limit,
         offset: parsedQuery.data.offset,
         total: result.total,
-        hasMore: parsedQuery.data.offset + result.items.length < result.total,
+        hasMore:
+          parsedQuery.data.offset + result.items.length < result.total,
       },
       counts: {
         unassigned: result.unassignedCount,
@@ -314,19 +334,17 @@ export async function handleStaffQueueGet(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleUnexpectedStaffApiError(error);
+    return handleStaffRouteError(error);
   }
 }
 
 /**
- * Core handler for GET /api/staff/intakes/[intakeId].
- * Resolves the intake strictly inside the authenticated staff member's verified
- * facility and returns a safe 404 without revealing cross-facility existence.
+ * GET /api/staff/intakes/[intakeId]
  */
 export async function handleStaffIntakeDetailGet(
-  request: {
-    readonly authorizationHeader: string | null;
-    readonly cookieHeader?: string | null;
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
     readonly intakeId: string;
     readonly searchParams: URLSearchParams;
   },
@@ -334,39 +352,34 @@ export async function handleStaffIntakeDetailGet(
 ): Promise<NextResponse> {
   assertServerRuntime();
 
-  const parsedIntakeId = IntakeIdParamSchema.safeParse(request.intakeId);
-  if (!parsedIntakeId.success) {
+  const parsedId = UUID_Schema.safeParse(input.intakeId);
+  if (!parsedId.success) {
     return jsonError(
       400,
       "INVALID_INTAKE_ID",
-      "The requested intake identifier is not a valid UUID.",
+      "Intake ID must be a valid UUID.",
     );
   }
 
-  const rawFacilityId = request.searchParams.get("facilityId");
-  let requestedFacilityId: string | null = null;
-  if (rawFacilityId !== null && rawFacilityId.trim().length > 0) {
-    const parsedFacility = FacilityIdSchema.safeParse(rawFacilityId);
-    if (!parsedFacility.success) {
-      return jsonError(
-        400,
-        "INVALID_FACILITY_ID",
-        "The requested facility identifier format is invalid.",
-      );
-    }
-    requestedFacilityId = parsedFacility.data;
+  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+    return jsonError(
+      400,
+      "INVALID_QUERY_PARAMS",
+      "Invalid facilityId query parameter.",
+    );
   }
 
   const repository = deps.repository ?? createDrizzleStaffRepository();
   const now = deps.now ?? (() => new Date());
 
   try {
-    const authContext = await requireAuthorizedStaff({
-      authorizationHeader: request.authorizationHeader,
-      cookieHeader: request.cookieHeader,
-      requestedFacilityId,
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: rawFacilityId ?? null,
       strictFacilityMatch: true,
-      allowedRoles: ALL_CLINICAL_STAFF_ROLES,
+      allowedRoles: ALL_STAFF_ROLES,
       verifyToken: deps.verifyToken,
       repository,
       env: deps.env,
@@ -374,12 +387,12 @@ export async function handleStaffIntakeDetailGet(
       revocationStore: deps.revocationStore,
     });
 
-    const record = await repository.findFacilityIntakeDetail(
-      authContext.activeFacility.facilityId,
-      parsedIntakeId.data,
+    const detail = await repository.findFacilityIntakeDetail(
+      authSession.activeFacility.facilityId,
+      parsedId.data,
     );
 
-    if (!record) {
+    if (!detail) {
       return jsonError(
         404,
         "INTAKE_NOT_FOUND",
@@ -387,61 +400,53 @@ export async function handleStaffIntakeDetailGet(
       );
     }
 
-    const payload: StaffIntakeDetailResponse =
-      StaffIntakeDetailResponseSchema.parse({
-        facility: authContext.activeFacility,
-        intake: record.intake,
-        evidence: record.evidence,
-        auditEvents: record.auditEvents,
-        fetchedAt: now().toISOString(),
-      });
+    const payload = StaffIntakeDetailResponseSchema.parse({
+      facility: authSession.activeFacility,
+      intake: detail.intake,
+      evidence: detail.evidence,
+      auditEvents: detail.auditEvents,
+      fetchedAt: now().toISOString(),
+    });
 
     return NextResponse.json(payload, {
       status: 200,
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleUnexpectedStaffApiError(error);
+    return handleStaffRouteError(error);
   }
 }
 
 /**
- * Core handler for GET /api/staff/admin/facility.
- * Strictly enforces `admin` role in PostgreSQL and returns a read-only overview
- * of the administrator's authorized facility (no provisioning or intake mutations).
+ * GET /api/staff/admin/facility
  */
 export async function handleStaffAdminFacilityGet(
-  request: {
-    readonly authorizationHeader: string | null;
-    readonly cookieHeader?: string | null;
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
     readonly searchParams: URLSearchParams;
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
 
-  const rawFacilityId = request.searchParams.get("facilityId");
-  let requestedFacilityId: string | null = null;
-  if (rawFacilityId !== null && rawFacilityId.trim().length > 0) {
-    const parsedFacility = FacilityIdSchema.safeParse(rawFacilityId);
-    if (!parsedFacility.success) {
-      return jsonError(
-        400,
-        "INVALID_FACILITY_ID",
-        "The requested facility identifier format is invalid.",
-      );
-    }
-    requestedFacilityId = parsedFacility.data;
+  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+    return jsonError(
+      400,
+      "INVALID_QUERY_PARAMS",
+      "Invalid facilityId query parameter.",
+    );
   }
 
   const repository = deps.repository ?? createDrizzleStaffRepository();
   const now = deps.now ?? (() => new Date());
 
   try {
-    const authContext = await requireAuthorizedStaff({
-      authorizationHeader: request.authorizationHeader,
-      cookieHeader: request.cookieHeader,
-      requestedFacilityId,
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: rawFacilityId ?? null,
       strictFacilityMatch: true,
       allowedRoles: ADMIN_ONLY_ROLES,
       verifyToken: deps.verifyToken,
@@ -451,51 +456,424 @@ export async function handleStaffAdminFacilityGet(
       revocationStore: deps.revocationStore,
     });
 
-    const overview = repository.getFacilityAdminOverview
-      ? await repository.getFacilityAdminOverview(
-          authContext.activeFacility.facilityId,
-        )
-      : null;
+    if (!repository.getFacilityAdminOverview) {
+      return jsonError(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Facility overview repository method is not available.",
+      );
+    }
+
+    const overview = await repository.getFacilityAdminOverview(
+      authSession.activeFacility.facilityId,
+    );
 
     if (!overview) {
       return jsonError(
         404,
         "FACILITY_NOT_FOUND",
-        "No facility record was found for your authorized facility scope.",
+        "Authorized facility overview could not be found.",
       );
     }
 
-    const payload: StaffAdminFacilityOverviewResponse =
-      StaffAdminFacilityOverviewResponseSchema.parse({
-        facility: {
-          facilityId: overview.facilityId,
-          facilityName: overview.facilityName,
-          facilityPublicCode: overview.facilityPublicCode,
-          role: "admin",
-          isDemo: overview.isDemo,
-          timezone: overview.timezone,
-          active: overview.active,
-        },
-        metrics: {
-          activeStaffCount: overview.activeStaffCount,
-          totalIntakesCount: overview.totalIntakesCount,
-          unassignedIntakesCount: overview.unassignedIntakesCount,
-        },
-        roleBoundaries: {
-          currentRole: "admin",
-          isDemoSession: authContext.authMode === "demo",
-          canAccessAdminOverview: true,
-          staffProvisioningSupportedInPhase: false,
-          intakeMutationsSupportedInPhase: false,
-        },
-        fetchedAt: now().toISOString(),
-      });
+    const payload = StaffAdminFacilityOverviewResponseSchema.parse({
+      facility: {
+        facilityId: overview.facilityId,
+        facilityName: overview.facilityName,
+        facilityPublicCode: overview.facilityPublicCode,
+        timezone: overview.timezone,
+        isDemo: overview.isDemo,
+        active: overview.active,
+        role: "admin",
+      },
+      metrics: {
+        activeStaffCount: overview.activeStaffCount,
+        totalIntakesCount: overview.totalIntakesCount,
+        unassignedIntakesCount: overview.unassignedIntakesCount,
+      },
+      roleBoundaries: {
+        currentRole: "admin",
+        isDemoSession: authSession.authMode === "demo",
+        canViewAdminOverview: true,
+        canViewFacilityQueue: true,
+        staffProvisioningMode: "cli_seed_only",
+      },
+      fetchedAt: now().toISOString(),
+    });
 
     return NextResponse.json(payload, {
       status: 200,
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleUnexpectedStaffApiError(error);
+    return handleStaffRouteError(error);
+  }
+}
+
+// =============================================================================
+// Milestone 2: Clinical Staff Mutations (Nurse / Doctor Only)
+// =============================================================================
+
+/**
+ * POST /api/staff/intakes/[intakeId]/review
+ */
+export async function handleStaffStartReviewPost(
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
+    readonly intakeId: string;
+    readonly body: unknown;
+  },
+  deps: StaffHandlerDeps = {},
+): Promise<NextResponse> {
+  assertServerRuntime();
+
+  const parsedId = UUID_Schema.safeParse(input.intakeId);
+  if (!parsedId.success) {
+    return jsonError(
+      400,
+      "INVALID_INTAKE_ID",
+      "Intake ID must be a valid UUID.",
+    );
+  }
+
+  const parsedBody = StaffStartReviewRequestSchema.safeParse(
+    input.body ?? {},
+  );
+  if (!parsedBody.success) {
+    return jsonError(
+      400,
+      "INVALID_REVIEW_START_PAYLOAD",
+      parsedBody.error.issues[0]?.message ?? "Invalid review start request.",
+    );
+  }
+
+  const repository = deps.repository ?? createDrizzleStaffRepository();
+  const now = deps.now ?? (() => new Date());
+
+  try {
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: parsedBody.data.facilityId ?? null,
+      strictFacilityMatch: true,
+      allowedRoles: CLINICAL_REVIEWER_ROLES,
+      verifyToken: deps.verifyToken,
+      repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
+    });
+
+    if (!repository.startStaffIntakeReview) {
+      return jsonError(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Review start operation is unavailable.",
+      );
+    }
+
+    const result = await repository.startStaffIntakeReview({
+      facilityId: authSession.activeFacility.facilityId,
+      intakeId: parsedId.data,
+      actorUid: authSession.staffProfile.uid,
+      actorRole: authSession.activeFacility.role,
+      actorDisplayName: authSession.staffProfile.displayName,
+    });
+
+    if (!result.ok) {
+      return jsonError(result.status, result.code, result.message);
+    }
+
+    const payload = StaffIntakeDetailResponseSchema.parse({
+      facility: authSession.activeFacility,
+      intake: result.data.intake,
+      evidence: result.data.evidence,
+      auditEvents: result.data.auditEvents,
+      fetchedAt: now().toISOString(),
+    });
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
+    });
+  } catch (error) {
+    return handleStaffRouteError(error);
+  }
+}
+
+/**
+ * POST /api/staff/intakes/[intakeId]/brief-review
+ */
+export async function handleStaffBriefReviewPost(
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
+    readonly intakeId: string;
+    readonly body: unknown;
+  },
+  deps: StaffHandlerDeps = {},
+): Promise<NextResponse> {
+  assertServerRuntime();
+
+  const parsedId = UUID_Schema.safeParse(input.intakeId);
+  if (!parsedId.success) {
+    return jsonError(
+      400,
+      "INVALID_INTAKE_ID",
+      "Intake ID must be a valid UUID.",
+    );
+  }
+
+  const parsedBody = StaffBriefReviewRequestSchema.safeParse(input.body);
+  if (!parsedBody.success) {
+    return jsonError(
+      400,
+      "INVALID_BRIEF_REVIEW_PAYLOAD",
+      parsedBody.error.issues[0]?.message ??
+        "Invalid staff brief review payload.",
+    );
+  }
+
+  const repository = deps.repository ?? createDrizzleStaffRepository();
+  const now = deps.now ?? (() => new Date());
+
+  try {
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: parsedBody.data.facilityId ?? null,
+      strictFacilityMatch: true,
+      allowedRoles: CLINICAL_REVIEWER_ROLES,
+      verifyToken: deps.verifyToken,
+      repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
+    });
+
+    if (!repository.saveStaffBriefReview) {
+      return jsonError(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Brief review operation is unavailable.",
+      );
+    }
+
+    const result =
+      parsedBody.data.action === "confirm"
+        ? await repository.saveStaffBriefReview({
+            facilityId: authSession.activeFacility.facilityId,
+            intakeId: parsedId.data,
+            actorUid: authSession.staffProfile.uid,
+            actorRole: authSession.activeFacility.role,
+            actorDisplayName: authSession.staffProfile.displayName,
+            action: "confirm",
+          })
+        : await repository.saveStaffBriefReview({
+            facilityId: authSession.activeFacility.facilityId,
+            intakeId: parsedId.data,
+            actorUid: authSession.staffProfile.uid,
+            actorRole: authSession.activeFacility.role,
+            actorDisplayName: authSession.staffProfile.displayName,
+            action: "correct",
+            reviewedBrief: parsedBody.data.reviewedBrief,
+            correctionNote: parsedBody.data.correctionNote,
+          });
+
+    if (!result.ok) {
+      return jsonError(result.status, result.code, result.message);
+    }
+
+    const payload = StaffIntakeDetailResponseSchema.parse({
+      facility: authSession.activeFacility,
+      intake: result.data.intake,
+      evidence: result.data.evidence,
+      auditEvents: result.data.auditEvents,
+      fetchedAt: now().toISOString(),
+    });
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
+    });
+  } catch (error) {
+    return handleStaffRouteError(error);
+  }
+}
+
+/**
+ * POST /api/staff/intakes/[intakeId]/priority
+ */
+export async function handleStaffPriorityPost(
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
+    readonly intakeId: string;
+    readonly body: unknown;
+  },
+  deps: StaffHandlerDeps = {},
+): Promise<NextResponse> {
+  assertServerRuntime();
+
+  const parsedId = UUID_Schema.safeParse(input.intakeId);
+  if (!parsedId.success) {
+    return jsonError(
+      400,
+      "INVALID_INTAKE_ID",
+      "Intake ID must be a valid UUID.",
+    );
+  }
+
+  const parsedBody = StaffPriorityMutationRequestSchema.safeParse(input.body);
+  if (!parsedBody.success) {
+    return jsonError(
+      400,
+      "INVALID_PRIORITY_PAYLOAD",
+      parsedBody.error.issues[0]?.message ?? "Invalid priority payload.",
+    );
+  }
+
+  const repository = deps.repository ?? createDrizzleStaffRepository();
+  const now = deps.now ?? (() => new Date());
+
+  try {
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: parsedBody.data.facilityId ?? null,
+      strictFacilityMatch: true,
+      allowedRoles: CLINICAL_REVIEWER_ROLES,
+      verifyToken: deps.verifyToken,
+      repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
+    });
+
+    if (!repository.assignOrUpdateStaffPriority) {
+      return jsonError(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Priority mutation operation is unavailable.",
+      );
+    }
+
+    const result = await repository.assignOrUpdateStaffPriority({
+      facilityId: authSession.activeFacility.facilityId,
+      intakeId: parsedId.data,
+      actorUid: authSession.staffProfile.uid,
+      actorRole: authSession.activeFacility.role,
+      actorDisplayName: authSession.staffProfile.displayName,
+      priority: parsedBody.data.priority,
+      reason: parsedBody.data.reason,
+    });
+
+    if (!result.ok) {
+      return jsonError(result.status, result.code, result.message);
+    }
+
+    const payload = StaffIntakeDetailResponseSchema.parse({
+      facility: authSession.activeFacility,
+      intake: result.data.intake,
+      evidence: result.data.evidence,
+      auditEvents: result.data.auditEvents,
+      fetchedAt: now().toISOString(),
+    });
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
+    });
+  } catch (error) {
+    return handleStaffRouteError(error);
+  }
+}
+
+/**
+ * POST /api/staff/intakes/[intakeId]/status
+ */
+export async function handleStaffStatusPost(
+  input: {
+    readonly authorizationHeader: string | null | undefined;
+    readonly cookieHeader?: string | null | undefined;
+    readonly intakeId: string;
+    readonly body: unknown;
+  },
+  deps: StaffHandlerDeps = {},
+): Promise<NextResponse> {
+  assertServerRuntime();
+
+  const parsedId = UUID_Schema.safeParse(input.intakeId);
+  if (!parsedId.success) {
+    return jsonError(
+      400,
+      "INVALID_INTAKE_ID",
+      "Intake ID must be a valid UUID.",
+    );
+  }
+
+  const parsedBody = StaffStatusMutationRequestSchema.safeParse(input.body);
+  if (!parsedBody.success) {
+    return jsonError(
+      400,
+      "INVALID_STATUS_PAYLOAD",
+      parsedBody.error.issues[0]?.message ?? "Invalid workflow status payload.",
+    );
+  }
+
+  const repository = deps.repository ?? createDrizzleStaffRepository();
+  const now = deps.now ?? (() => new Date());
+
+  try {
+    const authSession = await requireAuthorizedStaff({
+      authorizationHeader: input.authorizationHeader,
+      cookieHeader: input.cookieHeader,
+      requestedFacilityId: parsedBody.data.facilityId ?? null,
+      strictFacilityMatch: true,
+      allowedRoles: CLINICAL_REVIEWER_ROLES,
+      verifyToken: deps.verifyToken,
+      repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
+    });
+
+    if (!repository.updateStaffWorkflowStatus) {
+      return jsonError(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Workflow status mutation operation is unavailable.",
+      );
+    }
+
+    const result = await repository.updateStaffWorkflowStatus({
+      facilityId: authSession.activeFacility.facilityId,
+      intakeId: parsedId.data,
+      actorUid: authSession.staffProfile.uid,
+      actorRole: authSession.activeFacility.role,
+      actorDisplayName: authSession.staffProfile.displayName,
+      workflowStatus: parsedBody.data.workflowStatus,
+      reason: parsedBody.data.reason,
+    });
+
+    if (!result.ok) {
+      return jsonError(result.status, result.code, result.message);
+    }
+
+    const payload = StaffIntakeDetailResponseSchema.parse({
+      facility: authSession.activeFacility,
+      intake: result.data.intake,
+      evidence: result.data.evidence,
+      auditEvents: result.data.auditEvents,
+      fetchedAt: now().toISOString(),
+    });
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
+    });
+  } catch (error) {
+    return handleStaffRouteError(error);
   }
 }

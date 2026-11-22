@@ -9,7 +9,7 @@
     "start": "next start -H 0.0.0.0",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/schemas/intake.test.ts src/lib/env/config.test.ts src/lib/firebase/auth-state.test.ts src/db/schema.test.ts src/db/live-verification.test.ts src/lib/auth/staff-authorization.test.ts src/lib/auth/demo-session.test.ts src/lib/api/staff-handlers.test.ts src/lib/staff/polling.test.ts",
+    "test": "tsx --test src/lib/schemas/intake.test.ts src/lib/env/config.test.ts src/lib/firebase/auth-state.test.ts src/db/schema.test.ts src/db/live-verification.test.ts src/lib/auth/staff-authorization.test.ts src/lib/auth/demo-session.test.ts src/lib/api/staff-handlers.test.ts src/lib/api/intake-handlers.test.ts src/lib/gemini/service.test.ts src/lib/staff/polling.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts"

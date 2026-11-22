@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  handleStaffBriefReviewPost,
   handleStaffIntakeDetailGet,
+  handleStaffPriorityPost,
   handleStaffQueueGet,
   handleStaffSessionGet,
+  handleStaffStartReviewPost,
+  handleStaffStatusPost,
   parseStaffQueueSearchParams,
 } from "./staff-handlers";
 import { DatabaseUnavailableError } from "@/lib/db/errors";
@@ -770,3 +774,203 @@ test("Staff API routes return safe 503/500 responses without exposing DATABASE_U
     );
   }
 });
+
+// =============================================================================
+// Milestone 2 Clinical Staff Mutations (Review, Brief Review, Priority, Status)
+// =============================================================================
+
+test("POST /api/staff/intakes/[intakeId]/review starts clinical review for nurse and blocks admin role with 403", async () => {
+  const repo = createRepository({
+    async startStaffIntakeReview(params) {
+      assert.equal(params.facilityId, "demo-clinic-01");
+      assert.equal(params.intakeId, INTAKE_UUID_1);
+      assert.equal(params.actorUid, "staff-nurse-01");
+      return { ok: true, data: SAMPLE_DETAIL_RECORD };
+    },
+  });
+
+  const res = await handleStaffStartReviewPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: { facilityId: "demo-clinic-01" },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+      now: () => FIXED_NOW,
+    },
+  );
+  assert.equal(res.status, 200);
+
+  // Admin role is blocked from clinical mutations with 403 INSUFFICIENT_STAFF_ROLE
+  const adminRepo = createRepository({
+    async findStaffAuthorizationByUid() {
+      return {
+        profile: {
+          uid: "demo-admin-01",
+          email: "demo.admin@medflow.synthetic",
+          displayName: "Demo Administrator",
+          active: true,
+        },
+        memberships: [
+          {
+            facilityId: "demo-clinic-01",
+            facilityName: "MedFlow Synthetic Demo Clinic",
+            facilityPublicCode: "DEMO-CLINIC-01",
+            role: "admin",
+            isDemo: true,
+          },
+        ],
+      };
+    },
+  });
+
+  const adminRes = await handleStaffStartReviewPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: {},
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: adminRepo,
+    },
+  );
+  assert.equal(adminRes.status, 403);
+  const adminBody = (await adminRes.json()) as { error: { code: string } };
+  assert.equal(adminBody.error.code, "INSUFFICIENT_STAFF_ROLE");
+});
+
+test("POST /api/staff/intakes/[intakeId]/brief-review supports confirming AI brief and saving corrected staff copy with mandatory note", async () => {
+  let savedAction: string | null = null;
+  const repo = createRepository({
+    async saveStaffBriefReview(params) {
+      savedAction = params.action;
+      return { ok: true, data: SAMPLE_DETAIL_RECORD };
+    },
+  });
+
+  const confirmRes = await handleStaffBriefReviewPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: { action: "confirm" },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+      now: () => FIXED_NOW,
+    },
+  );
+  assert.equal(confirmRes.status, 200);
+  assert.equal(savedAction, "confirm");
+
+  // Corrected action without valid correctionNote must be rejected with 400
+  const invalidCorrectRes = await handleStaffBriefReviewPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: {
+        action: "correct",
+        reviewedBrief: SAMPLE_DETAIL_RECORD.intake.staffReview.reviewedBrief,
+        correctionNote: "no",
+      },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+    },
+  );
+  assert.equal(invalidCorrectRes.status, 400);
+
+  const validCorrectRes = await handleStaffBriefReviewPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: {
+        action: "correct",
+        reviewedBrief: SAMPLE_DETAIL_RECORD.intake.staffReview.reviewedBrief,
+        correctionNote: "Clarified onset trigger during bedside check-in.",
+      },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+      now: () => FIXED_NOW,
+    },
+  );
+  assert.equal(validCorrectRes.status, 200);
+  assert.equal(savedAction, "correct");
+});
+
+test("POST /api/staff/intakes/[intakeId]/priority and /status enforce domain mutation rules cleanly", async () => {
+  const repo = createRepository({
+    async assignOrUpdateStaffPriority(params) {
+      if (!params.reason) {
+        return {
+          ok: false,
+          status: 400,
+          code: "PRIORITY_CHANGE_REASON_REQUIRED",
+          message:
+            "Changing an already-assigned operational priority requires an explicit clinical or operational reason.",
+        };
+      }
+      return { ok: true, data: SAMPLE_DETAIL_RECORD };
+    },
+    async updateStaffWorkflowStatus(params) {
+      assert.equal(params.workflowStatus, "completed");
+      return { ok: true, data: SAMPLE_DETAIL_RECORD };
+    },
+  });
+
+  const missingReasonRes = await handleStaffPriorityPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: { priority: "priority_review" },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+    },
+  );
+  assert.equal(missingReasonRes.status, 400);
+  const errBody = (await missingReasonRes.json()) as { error: { code: string } };
+  assert.equal(errBody.error.code, "PRIORITY_CHANGE_REASON_REQUIRED");
+
+  const validPriorityRes = await handleStaffPriorityPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: {
+        priority: "immediate_review",
+        reason: "Escalated after nurse bedside check.",
+      },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+      now: () => FIXED_NOW,
+    },
+  );
+  assert.equal(validPriorityRes.status, 200);
+
+  const statusRes = await handleStaffStatusPost(
+    {
+      authorizationHeader: "Bearer good-token",
+      intakeId: INTAKE_UUID_1,
+      body: {
+        workflowStatus: "completed",
+        reason: "Handed off to attending physician.",
+      },
+    },
+    {
+      verifyToken: verifyValidToken,
+      repository: repo,
+      now: () => FIXED_NOW,
+    },
+  );
+  assert.equal(statusRes.status, 200);
+});
+

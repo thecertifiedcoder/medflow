@@ -5,64 +5,42 @@ import {
   AuditActorTypeSchema,
   CertaintySchema,
   ClinicalIntakeBriefSchema,
+  INTAKE_LIMITS,
   InputModeSchema,
   StaffAssignedPrioritySchema,
   StaffReviewStatusSchema,
   StaffRoleSchema,
   TranscriptionStatusSchema,
   WorkflowStatusSchema,
-} from "@/lib/schemas/intake";
+} from "./intake";
 
-export const FACILITY_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
-export const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const DemoPersonaSchema = z.enum(["admin", "clinical_staff"]);
+export type DemoPersona = z.infer<typeof DemoPersonaSchema>;
 
-export const FacilityIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(128)
-  .regex(FACILITY_ID_REGEX, "Invalid facility identifier format.");
+export const AuthModeSchema = z.enum(["firebase", "demo"]);
+export type AuthMode = z.infer<typeof AuthModeSchema>;
 
-export const IntakeIdParamSchema = z
-  .string()
-  .trim()
-  .regex(UUID_REGEX, "Intake identifier must be a valid UUID.");
-
-export const EvidenceFieldCategorySchema = z.enum([
-  "chief_concern",
-  "symptom",
-  "relevant_context",
-  "reported_detail_to_review",
-]);
-export type EvidenceFieldCategory = z.infer<typeof EvidenceFieldCategorySchema>;
-
-export const EvidenceVerificationStatusSchema = z.enum([
-  "exact_quote_match",
-  "missing_quote",
-  "quote_not_found",
-  "ambiguous_quote",
-]);
-export type EvidenceVerificationStatus = z.infer<
-  typeof EvidenceVerificationStatusSchema
->;
-
-export const AiBriefProvenanceEnvelopeSchema = z
+export const DemoStatusResponseSchema = z
   .object({
-    intakeId: z.string().min(1),
-    narrativeSha256: z.string().regex(/^[0-9a-f]{64}$/),
-    draftAndEvidenceSha256: z.string().regex(/^[0-9a-f]{64}$/),
-    modelId: z.string().min(1),
-    extractionSchemaVersion: z.string().min(1),
-    evidenceEngineVersion: z.string().min(1),
-    createdAt: z.string().min(1),
-    hmacSha256: z.string().min(1),
+    enabled: z.boolean(),
+    configured: z.boolean(),
+    facilityPublicCode: z.string().min(1).max(64),
+    hasActiveDemoSession: z.boolean(),
   })
   .strict();
+export type DemoStatusResponse = z.infer<typeof DemoStatusResponseSchema>;
+
+export const DemoLogoutResponseSchema = z
+  .object({
+    loggedOut: z.literal(true),
+    revoked: z.boolean(),
+  })
+  .strict();
+export type DemoLogoutResponse = z.infer<typeof DemoLogoutResponseSchema>;
 
 export const AuthorizedFacilityMembershipSchema = z
   .object({
-    facilityId: FacilityIdSchema,
+    facilityId: z.string().min(1).max(128),
     facilityName: z.string().min(1).max(120),
     facilityPublicCode: z.string().min(1).max(64),
     role: StaffRoleSchema,
@@ -76,101 +54,85 @@ export type AuthorizedFacilityMembership = z.infer<
 export const ResolvedStaffProfileSchema = z
   .object({
     uid: z.string().min(1).max(128),
-    email: z.string().email().max(254),
+    email: z.string().email(),
     displayName: z.string().min(1).max(120),
     active: z.boolean(),
     role: StaffRoleSchema,
-    facilityIds: z.array(FacilityIdSchema).min(1).max(20),
-    memberships: z.array(AuthorizedFacilityMembershipSchema).min(1).max(20),
+    facilityIds: z.array(z.string().min(1).max(128)).min(1),
+    memberships: z.array(AuthorizedFacilityMembershipSchema).min(1),
   })
   .strict();
 export type ResolvedStaffProfile = z.infer<typeof ResolvedStaffProfileSchema>;
 
-export const AuthModeSchema = z.enum(["firebase", "demo"]);
-export type AuthMode = z.infer<typeof AuthModeSchema>;
-
-export const DemoPersonaSchema = z.enum(["admin", "clinical_staff"]);
-export type DemoPersona = z.infer<typeof DemoPersonaSchema>;
-
-const SessionIdentitySchema = z
+const VerifiedUserIdentitySchema = z
   .object({
-    uid: z.string().min(1),
-    email: z.string().email().nullable(),
-    emailVerified: z.literal(true),
+    uid: z.string().min(1).max(128),
+    email: z.string().nullable(),
+    emailVerified: z.boolean(),
     displayName: z.string().nullable(),
   })
   .strict();
 
-const SessionBaseSchema = z.object({
-  authenticated: z.literal(true),
-  verifiedByServer: z.literal(true),
-  authMode: AuthModeSchema,
-  demoPersona: DemoPersonaSchema.nullable(),
-  sessionExpiresAt: z.string().datetime().nullable(),
-  projectId: z.string().min(1),
-  authorizationModel: z.literal("neon_postgres_server_rbac"),
-  user: SessionIdentitySchema,
-});
-
 export const PostgresStaffSessionResponseSchema = z.discriminatedUnion(
   "authorizationStatus",
   [
-    SessionBaseSchema.extend({
-      authorizationStatus: z.literal("authorized"),
-      staffProfile: ResolvedStaffProfileSchema,
-      activeFacility: AuthorizedFacilityMembershipSchema,
-    }).strict(),
-    SessionBaseSchema.extend({
-      authorizationStatus: z.literal("unprovisioned"),
-      staffProfile: z.null(),
-      activeFacility: z.null(),
-      message: z.string().min(1),
-    }).strict(),
-    SessionBaseSchema.extend({
-      authorizationStatus: z.literal("inactive"),
-      staffProfile: z.null(),
-      activeFacility: z.null(),
-      message: z.string().min(1),
-    }).strict(),
+    z
+      .object({
+        authenticated: z.literal(true),
+        verifiedByServer: z.literal(true),
+        authMode: AuthModeSchema,
+        demoPersona: DemoPersonaSchema.nullable(),
+        sessionExpiresAt: z.string().datetime().nullable(),
+        projectId: z.string().min(1),
+        authorizationModel: z.literal("neon_postgres_server_rbac"),
+        user: VerifiedUserIdentitySchema,
+        authorizationStatus: z.literal("authorized"),
+        staffProfile: ResolvedStaffProfileSchema,
+        activeFacility: AuthorizedFacilityMembershipSchema,
+      })
+      .strict(),
+    z
+      .object({
+        authenticated: z.literal(true),
+        verifiedByServer: z.literal(true),
+        authMode: z.literal("firebase"),
+        demoPersona: z.null(),
+        sessionExpiresAt: z.null(),
+        projectId: z.string().min(1),
+        authorizationModel: z.literal("neon_postgres_server_rbac"),
+        user: VerifiedUserIdentitySchema,
+        authorizationStatus: z.literal("unprovisioned"),
+        staffProfile: z.null(),
+        activeFacility: z.null(),
+        message: z.string().min(1),
+      })
+      .strict(),
+    z
+      .object({
+        authenticated: z.literal(true),
+        verifiedByServer: z.literal(true),
+        authMode: z.literal("firebase"),
+        demoPersona: z.null(),
+        sessionExpiresAt: z.null(),
+        projectId: z.string().min(1),
+        authorizationModel: z.literal("neon_postgres_server_rbac"),
+        user: VerifiedUserIdentitySchema,
+        authorizationStatus: z.literal("inactive"),
+        staffProfile: z.null(),
+        activeFacility: z.null(),
+        message: z.string().min(1),
+      })
+      .strict(),
   ],
 );
 export type PostgresStaffSessionResponse = z.infer<
   typeof PostgresStaffSessionResponseSchema
 >;
 
-// =============================================================================
-// Staff Queue API Contracts (GET /api/staff/intakes)
-// =============================================================================
-
-export const STAFF_QUEUE_DEFAULT_LIMIT = 50;
-export const STAFF_QUEUE_MAX_LIMIT = 100;
-
-export const StaffQueueQuerySchema = z
-  .object({
-    facilityId: FacilityIdSchema.optional(),
-    workflowStatus: WorkflowStatusSchema.optional(),
-    priority: StaffAssignedPrioritySchema.optional(),
-    includeCompleted: z.boolean().default(false),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(STAFF_QUEUE_MAX_LIMIT)
-      .default(STAFF_QUEUE_DEFAULT_LIMIT),
-    offset: z.number().int().min(0).max(10_000).default(0),
-  })
-  .strict();
-export type StaffQueueQuery = z.infer<typeof StaffQueueQuerySchema>;
-
-/**
- * Intentionally excludes full confirmedNarrative, transcriptRaw, aiBrief,
- * staffReviewedBrief, and provenance envelopes so queue list reads return
- * only the minimum fields needed for queue operation.
- */
 export const StaffQueueItemSchema = z
   .object({
-    id: IntakeIdParamSchema,
-    facilityId: FacilityIdSchema,
+    id: z.string().uuid(),
+    facilityId: z.string().min(1).max(128),
     referenceCode: z.string().min(1).max(32),
     patientDisplayName: z.string().max(80).nullable(),
     age: z.number().int().min(0).max(120).nullable(),
@@ -193,7 +155,7 @@ export const StaffQueueResponseSchema = z
     items: z.array(StaffQueueItemSchema),
     pagination: z
       .object({
-        limit: z.number().int().min(1).max(STAFF_QUEUE_MAX_LIMIT),
+        limit: z.number().int().min(1).max(100),
         offset: z.number().int().min(0),
         total: z.number().int().min(0),
         hasMore: z.boolean(),
@@ -210,22 +172,36 @@ export const StaffQueueResponseSchema = z
   .strict();
 export type StaffQueueResponse = z.infer<typeof StaffQueueResponseSchema>;
 
-// =============================================================================
-// Staff Intake Detail API Contracts (GET /api/staff/intakes/[intakeId])
-// =============================================================================
+export const EvidenceFieldCategorySchema = z.enum([
+  "chief_concern",
+  "symptom",
+  "relevant_context",
+  "reported_detail_to_review",
+]);
+export type EvidenceFieldCategory = z.infer<typeof EvidenceFieldCategorySchema>;
 
-export const StaffIntakeEvidenceItemSchema = z
+export const EvidenceVerificationStatusSchema = z.enum([
+  "exact_quote_match",
+  "missing_quote",
+  "quote_not_found",
+  "ambiguous_quote",
+]);
+export type EvidenceVerificationStatus = z.infer<
+  typeof EvidenceVerificationStatusSchema
+>;
+
+export const StaffIntakeEvidenceRecordSchema = z
   .object({
-    id: IntakeIdParamSchema,
-    intakeId: IntakeIdParamSchema,
-    facilityId: FacilityIdSchema,
-    extractionRunId: IntakeIdParamSchema,
+    id: z.string().uuid(),
+    intakeId: z.string().uuid(),
+    facilityId: z.string().min(1).max(128),
+    extractionRunId: z.string().uuid(),
     isCurrent: z.boolean(),
     fieldCategory: EvidenceFieldCategorySchema,
     fieldPath: z.string().min(1).max(120),
     claimValue: z.string().min(1).max(500),
     certainty: CertaintySchema,
-    sourceQuote: z.string().max(500).nullable(),
+    sourceQuote: z.string().min(1).max(500).nullable(),
     verificationStatus: EvidenceVerificationStatusSchema,
     spanStart: z.number().int().min(0).nullable(),
     spanEnd: z.number().int().min(1).nullable(),
@@ -234,19 +210,19 @@ export const StaffIntakeEvidenceItemSchema = z
     createdAt: z.string().datetime(),
   })
   .strict();
-export type StaffIntakeEvidenceItem = z.infer<
-  typeof StaffIntakeEvidenceItemSchema
+export type StaffIntakeEvidenceRecord = z.infer<
+  typeof StaffIntakeEvidenceRecordSchema
 >;
 
 export const StaffIntakeAuditEventSchema = z
   .object({
-    id: IntakeIdParamSchema,
-    facilityId: FacilityIdSchema,
-    intakeId: IntakeIdParamSchema,
+    id: z.string().uuid(),
+    facilityId: z.string().min(1).max(128),
+    intakeId: z.string().uuid(),
     actorType: AuditActorTypeSchema,
-    actorUid: z.string().max(128).nullable(),
+    actorUid: z.string().min(1).max(128).nullable(),
     actorRole: StaffRoleSchema.nullable(),
-    actorDisplayName: z.string().max(120).nullable(),
+    actorDisplayName: z.string().min(1).max(120).nullable(),
     action: AuditActionSchema,
     fromValue: z.string().max(120).nullable(),
     toValue: z.string().max(120).nullable(),
@@ -256,29 +232,38 @@ export const StaffIntakeAuditEventSchema = z
   .strict();
 export type StaffIntakeAuditEvent = z.infer<typeof StaffIntakeAuditEventSchema>;
 
-export const StaffIntakeDetailSchema = z
+export const AiBriefProvenanceEnvelopeSchema = z
   .object({
-    id: IntakeIdParamSchema,
-    facilityId: FacilityIdSchema,
+    intakeId: z.string().min(1),
+    narrativeSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    draftAndEvidenceSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    modelId: z.string().min(1),
+    extractionSchemaVersion: z.string().min(1),
+    evidenceEngineVersion: z.string().min(1),
+    createdAt: z.string().datetime(),
+    hmacSha256: z.string().min(1),
+  })
+  .strict();
+
+export const StaffIntakeDetailRecordSchema = z
+  .object({
+    id: z.string().uuid(),
+    facilityId: z.string().min(1).max(128),
     referenceCode: z.string().min(1).max(32),
     demoRecord: z.boolean(),
     patientDisplayName: z.string().max(80).nullable(),
     age: z.number().int().min(0).max(120).nullable(),
-
-    // Immutable patient capture source (never overwritten by AI or staff review)
     patientSource: z
       .object({
         inputMode: InputModeSchema,
         transcriptionStatus: TranscriptionStatusSchema,
         transcriptionModel: z.string().max(80).nullable(),
-        transcriptRaw: z.string().nullable(),
-        confirmedNarrative: z.string().min(1),
+        transcriptRaw: z.string().max(4000).nullable(),
+        confirmedNarrative: z.string().min(5).max(4000),
         confirmedNarrativeSha256: z.string().regex(/^[0-9a-f]{64}$/),
         transcriptConfirmedAt: z.string().datetime().nullable(),
       })
       .strict(),
-
-    // Non-authoritative AI draft (distinct from patientSource and staffReview)
     aiDraft: z
       .object({
         status: AiStatusSchema,
@@ -289,8 +274,6 @@ export const StaffIntakeDetailSchema = z
         errorCode: z.string().max(80).nullable(),
       })
       .strict(),
-
-    // Separate staff-reviewed copy (never overwrites patientSource or aiDraft)
     staffReview: z
       .object({
         status: StaffReviewStatusSchema,
@@ -300,8 +283,6 @@ export const StaffIntakeDetailSchema = z
         reviewedAt: z.string().datetime().nullable(),
       })
       .strict(),
-
-    // Staff-controlled workflow state (never set by AI)
     workflow: z
       .object({
         staffAssignedPriority: StaffAssignedPrioritySchema,
@@ -309,18 +290,19 @@ export const StaffIntakeDetailSchema = z
         workflowStatus: WorkflowStatusSchema,
       })
       .strict(),
-
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
   .strict();
-export type StaffIntakeDetail = z.infer<typeof StaffIntakeDetailSchema>;
+export type StaffIntakeDetailRecord = z.infer<
+  typeof StaffIntakeDetailRecordSchema
+>;
 
 export const StaffIntakeDetailResponseSchema = z
   .object({
     facility: AuthorizedFacilityMembershipSchema,
-    intake: StaffIntakeDetailSchema,
-    evidence: z.array(StaffIntakeEvidenceItemSchema),
+    intake: StaffIntakeDetailRecordSchema,
+    evidence: z.array(StaffIntakeEvidenceRecordSchema),
     auditEvents: z.array(StaffIntakeAuditEventSchema),
     fetchedAt: z.string().datetime(),
   })
@@ -329,34 +311,19 @@ export type StaffIntakeDetailResponse = z.infer<
   typeof StaffIntakeDetailResponseSchema
 >;
 
-// =============================================================================
-// Hackathon Demo Mode & Admin Facility Overview Contracts (DA-1)
-// =============================================================================
-
-export const DemoStatusResponseSchema = z
-  .object({
-    enabled: z.boolean(),
-    configured: z.boolean(),
-    facilityPublicCode: z.string().min(1).max(64),
-    hasActiveDemoSession: z.boolean(),
-  })
-  .strict();
-export type DemoStatusResponse = z.infer<typeof DemoStatusResponseSchema>;
-
-export const DemoLogoutResponseSchema = z
-  .object({
-    loggedOut: z.literal(true),
-    revoked: z.boolean(),
-  })
-  .strict();
-export type DemoLogoutResponse = z.infer<typeof DemoLogoutResponseSchema>;
-
 export const StaffAdminFacilityOverviewResponseSchema = z
   .object({
-    facility: AuthorizedFacilityMembershipSchema.extend({
-      timezone: z.string().min(1).max(64),
-      active: z.boolean(),
-    }).strict(),
+    facility: z
+      .object({
+        facilityId: z.string().min(1).max(128),
+        facilityName: z.string().min(1).max(120),
+        facilityPublicCode: z.string().min(1).max(64),
+        timezone: z.string().min(1).max(64),
+        isDemo: z.boolean(),
+        active: z.boolean(),
+        role: z.literal("admin"),
+      })
+      .strict(),
     metrics: z
       .object({
         activeStaffCount: z.number().int().min(0),
@@ -368,9 +335,9 @@ export const StaffAdminFacilityOverviewResponseSchema = z
       .object({
         currentRole: z.literal("admin"),
         isDemoSession: z.boolean(),
-        canAccessAdminOverview: z.literal(true),
-        staffProvisioningSupportedInPhase: z.literal(false),
-        intakeMutationsSupportedInPhase: z.literal(false),
+        canViewAdminOverview: z.literal(true),
+        canViewFacilityQueue: z.literal(true),
+        staffProvisioningMode: z.literal("cli_seed_only"),
       })
       .strict(),
     fetchedAt: z.string().datetime(),
@@ -380,4 +347,96 @@ export type StaffAdminFacilityOverviewResponse = z.infer<
   typeof StaffAdminFacilityOverviewResponseSchema
 >;
 
+// =============================================================================
+// Milestone 2: Clinical Staff Review, Priority, Status & Extraction Schemas
+// =============================================================================
 
+export const StaffStartReviewRequestSchema = z
+  .object({
+    facilityId: z.string().trim().min(1).max(128).optional(),
+  })
+  .strict();
+export type StaffStartReviewRequest = z.infer<
+  typeof StaffStartReviewRequestSchema
+>;
+
+export const StaffBriefReviewRequestSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("confirm"),
+      facilityId: z.string().trim().min(1).max(128).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("correct"),
+      facilityId: z.string().trim().min(1).max(128).optional(),
+      reviewedBrief: ClinicalIntakeBriefSchema,
+      correctionNote: z
+        .string()
+        .trim()
+        .min(
+          3,
+          "A correction note of at least 3 characters is required when editing the intake brief.",
+        )
+        .max(INTAKE_LIMITS.maxCorrectionNoteLength),
+    })
+    .strict(),
+]);
+export type StaffBriefReviewRequest = z.infer<
+  typeof StaffBriefReviewRequestSchema
+>;
+
+export const AssignableStaffPrioritySchema = z.enum([
+  "immediate_review",
+  "priority_review",
+  "routine_review",
+]);
+export type AssignableStaffPriority = z.infer<
+  typeof AssignableStaffPrioritySchema
+>;
+
+export const StaffPriorityMutationRequestSchema = z
+  .object({
+    facilityId: z.string().trim().min(1).max(128).optional(),
+    priority: AssignableStaffPrioritySchema,
+    reason: z
+      .string()
+      .trim()
+      .max(INTAKE_LIMITS.maxPriorityReasonLength)
+      .optional(),
+  })
+  .strict();
+export type StaffPriorityMutationRequest = z.infer<
+  typeof StaffPriorityMutationRequestSchema
+>;
+
+export const StaffStatusMutationRequestSchema = z
+  .object({
+    facilityId: z.string().trim().min(1).max(128).optional(),
+    workflowStatus: WorkflowStatusSchema,
+    reason: z
+      .string()
+      .trim()
+      .max(INTAKE_LIMITS.maxPriorityReasonLength)
+      .optional(),
+  })
+  .strict();
+export type StaffStatusMutationRequest = z.infer<
+  typeof StaffStatusMutationRequestSchema
+>;
+
+export const IntakeExtractionResponseSchema = z
+  .object({
+    intakeId: z.string().uuid(),
+    referenceCode: z.string().min(1).max(32),
+    aiStatus: AiStatusSchema,
+    aiModelId: z.string().nullable(),
+    aiBrief: ClinicalIntakeBriefSchema.nullable(),
+    aiErrorCode: z.string().nullable(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+export type IntakeExtractionResponse = z.infer<
+  typeof IntakeExtractionResponseSchema
+>;

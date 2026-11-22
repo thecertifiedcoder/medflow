@@ -497,9 +497,9 @@ function AuthorizedStaffQueue(context: AuthorizedStaffContext) {
                     Deterministic queue ordering rules
                   </div>
                   <p className="m-0 text-[12.5px] text-[var(--mf-text-secondary)]">
-                    When patients submit intakes in Milestone 2, records appear
-                    here automatically every 5 seconds in strict deterministic
-                    order:
+                    As patients submit intakes on <code>/intake</code>, records
+                    appear here automatically every 5 seconds in strict
+                    deterministic order:
                   </p>
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
                     <PriorityLabel priority="unassigned" />

@@ -516,8 +516,33 @@ test(
       assert.equal(overview.facilityId, "demo-clinic-01");
       assert.equal(overview.isDemo, true);
       assert.ok(overview.activeStaffCount >= 2);
+      assert.ok(
+        overview.totalIntakesCount >= 5,
+        `Expected at least 5 seeded synthetic intakes in demo-clinic-01, found ${overview.totalIntakesCount}`,
+      );
+
+      const allQueue = await repo.listFacilityIntakes({
+        facilityId: CANONICAL_DEMO_FACILITY.id,
+        includeCompleted: true,
+        limit: 50,
+        offset: 0,
+      });
+      const refCodes = new Set(allQueue.items.map((item) => item.referenceCode));
+      for (const expectedRef of [
+        "MF-DEMO-0101",
+        "MF-DEMO-0102",
+        "MF-DEMO-0103",
+        "MF-DEMO-0104",
+        "MF-DEMO-0105",
+      ]) {
+        assert.ok(
+          refCodes.has(expectedRef),
+          `Expected seeded synthetic demonstration intake ${expectedRef} in demo-clinic-01`,
+        );
+      }
     } finally {
       await closeDbPool();
     }
   },
 );
+
