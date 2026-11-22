@@ -2,7 +2,7 @@
 
 **Document ID:** MED-UX-014  
 **Version:** 0.1  
-**Status:** Hackathon design baseline — visual design is finalised in the separate HTML design system  
+**Status:** Hackathon UX baseline — visual implementation follows the single HTML design-system file attached to the AI Studio conversation  
 **Last updated:** 2026-11-21  
 **Related PRD:** `13_PRODUCT_REQUIREMENTS.md`
 
@@ -553,27 +553,9 @@ The product should support one coherent five-minute demo flow using only synthet
 
 The demo must show actual running functionality. If microphone capture, transcription, live sync or any other feature is simulated, disclose that clearly and do not present it as a working integration.
 
-## 13. Design-system handoff requirements
+## 13. Visual implementation handoff
 
-The standalone HTML design system must implement reusable foundations and components for:
-
-- Patient form shell and step progression.
-- Text input, textarea and optional age input.
-- Voice recorder states: idle, permission, recording, stopped, transcribing, transcript review and failure.
-- Submission/confirmation states.
-- Staff shell, top navigation and connection state.
-- Queue groups and queue rows/cards.
-- AI extraction state labels.
-- Evidence-linked fact cards and quote blocks.
-- Explicit / unclear / missing labels.
-- Staff-reviewed versus AI-draft states.
-- Priority selection and reason dialog.
-- Workflow status control.
-- Audit timeline.
-- Loading, empty, reconnecting, offline and error states.
-- Responsive layout behaviour and accessibility states.
-
-The HTML is a design reference, not the production app. It must use synthetic sample content and must not imply that any integration is already working.
+The founder-provided standalone HTML file attached directly to the Google AI Studio conversation is the sole visual source of truth. Rebuild the application's React components to match it. Do not create a separate design-tokens file, extracted CSS token sheet or design-system specification. This UX document remains authoritative for user-facing behaviour, routes, states, permissions, copy and accessibility requirements. The HTML's demo JavaScript is not production functionality; do not implement any clinical scoring or autonomous triage behaviour shown in the reference.
 
 ## 14. UX acceptance checklist
 
@@ -610,12 +592,5 @@ The HTML is a design reference, not the production app. It must use synthetic sa
 - The actual voice recording/transcription endpoint must be validated on the selected Android browser before finalising recorder implementation details.
 - AI extraction fields and evidence schema must match `06_AI_EXTRACTION_SPEC.md` and `09_DATA_MODEL_AND_API_CONTRACTS.md`.
 - Staff-reviewed corrections require a separate persisted version; do not overwrite the original `aiBrief`.
-- Final type, colour, icon and spacing tokens will be set in the standalone HTML design system. This document defines behaviour and information hierarchy, not final visual styling.
+- Visual decisions are defined only by the standalone HTML file attached to the AI Studio conversation. This document defines behaviour and information hierarchy, not a separate visual system.
 - Product name remains a codename until clearance.
-
-
-## 15. Founder-approved visual-system update (2026-11-22)
-
-The founder-supplied design reference at `design-system/medflow-design-system.html` replaces the previous visual system. Follow `docs/18_DESIGN_SYSTEM_SPEC.md` for palette, IBM Plex typography, component language, layout, source-provenance treatments and responsive/accessibility implementation.
-
-This UX document remains authoritative for user-facing behaviour, routes, states, permissions and copy. The HTML's patient/staff interactions are design demonstrations only. Its adult TEWS/SATS scoring, clinical colour classifications, vital-sign workflow, clinical time targets and AI red-flag prioritisation are explicitly excluded from the MVP. Continue to use the existing staff-assigned operational workflow priorities and statuses; do not reinterpret them as clinical triage classes.
