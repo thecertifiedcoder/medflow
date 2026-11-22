@@ -119,3 +119,22 @@ Prepare at least 8 fictional narratives:
 - prompt-injection text embedded in a patient narrative.
 
 Evaluate whether extraction is faithful, whether evidence quotes are exact, whether unknowns remain unknown and whether the model avoids diagnosis or urgency assignment. Record failures honestly; do not call this clinical validation.
+
+
+## 10. Evidence Integrity Engine
+
+The deterministic Evidence Integrity Engine is specified in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. It is the approved algorithm direction for MedFlow; it does not calculate clinical severity or urgency.
+
+For each evidence-bearing claim (chief concern, symptoms, relevant context and reported details):
+
+- Gemini proposes the claim and its source quotation.
+- The server validates the candidate against the strict versioned schema.
+- The server, not Gemini, assigns the evidence status by searching the exact immutable `confirmedNarrative`.
+- A unique exact quotation receives a server-derived UTF-16 source span.
+- Missing, absent or repeated quotations are marked `missing_quote`, `quote_not_found` or `ambiguous_quote`.
+- Do not use fuzzy matching, silent quote repair or model-supplied offsets.
+- An exact quotation match proves only that the words occur in the source. It does not prove semantic entailment, clinical truth or clinical accuracy.
+- Display field-level evidence states; do not create an aggregate confidence/trust score.
+- Bind the validated draft and evidence metadata to the exact narrative with the server-generated provenance envelope described in docs/19.
+
+The free-text `clinicianSummary` remains an AI draft and must not be labelled as mechanically verified. The original narrative, AI draft and staff-reviewed copy remain separate. Staff review is mandatory.
