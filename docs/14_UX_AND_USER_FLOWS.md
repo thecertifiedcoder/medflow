@@ -594,3 +594,48 @@ The founder-provided standalone HTML file attached directly to the Google AI Stu
 - Staff-reviewed corrections require a separate persisted version; do not overwrite the original `aiBrief`.
 - Visual decisions are defined only by the standalone HTML file attached to the AI Studio conversation. This document defines behaviour and information hierarchy, not a separate visual system.
 - Product name remains a codename until clearance.
+
+## 16. Phase UX-1 Platform Experience Rework (implemented under ADR `D-022`)
+
+Before beginning Milestone 2 (patient intake persistence, server-side Gemini transcription/extraction, and staff review mutations), Phase UX-1 restructures MedFlow's information architecture, route separation, context-aware layout shells, and user journeys so patients, clinical staff, facility administrators, and hackathon judges each have a dedicated, unambiguous path.
+
+### 16.1 Route and screen architecture
+
+| Route | Screen Name | Primary Audience | Shell / Navigation Context |
+|---|---|---|---|
+| `/` | Public Home & Entry-Point Selector | Patients, clinical staff, administrators, hackathon judges | `PublicTopBar` (`data-testid="public-top-bar"`) |
+| `/intake` | Patient Self-Intake Experience | Patients / visitors (`DEMO-CLINIC-01`) | `PatientTopBar` (`data-testid="patient-top-bar"`) + `.mf-pt` warm clinical patient canvas (zero staff/admin/demo navigation links) |
+| `/demo` | Hackathon Demo Access Hub | Hackathon judges & evaluators | `PublicTopBar` + dedicated evaluation launcher (`POST /api/demo/session/admin` → `/staff/admin`, `POST /api/demo/session/staff` → `/staff/queue`) |
+| `/staff/login` | Staff Authentication Portal | Provisioned clinicians & administrators | `PublicTopBar` + Firebase Google Sign-In (`StaffLoginPanel`) + quiet judge link to `/demo` |
+| `/staff/queue` | Clinical Staff Intake Queue Workspace | Nurses, doctors, and reviewing administrators | `WorkspaceTopBar` (`data-testid="workspace-top-bar"`) + `StaffAccessGate` + `StaffWorkspaceLayout` |
+| `/staff/admin` | Facility Administrator Workspace | Facility administrators (`admin` role only) | `WorkspaceTopBar` + `StaffAccessGate` + `StaffWorkspaceLayout` (enforces HTTP 403 / `data-testid="admin-role-restricted-panel"` for `nurse`/`doctor`) |
+| `/staff/intakes/[intakeId]` | Clinical Intake Record Review | Authorized facility staff (`nurse`, `doctor`, `admin`) | `WorkspaceTopBar` + `StaffAccessGate` + `StaffWorkspaceLayout` (6 provenance-separated sections) |
+
+### 16.2 Context-aware top bars and workspace chrome
+
+1. **Patient Top Bar (`/intake`):** Displays only the MedFlow brand mark, the synthetic facility code (`DEMO-CLINIC-01`), and an `"Exit to Home"` link (`/`). Never exposes clinical queue links, administrator controls, or demo persona switchers.
+2. **Public Top Bar (`/`, `/demo`, `/staff/login`):** Provides clear top-level entry navigation (`Home`, `Patient Intake`, `Staff Sign-In`, `Hackathon Demo`) and an active-session shortcut (`Open Workspace` when authenticated, or `Judge Demo Access` when signed out).
+3. **Clinical & Admin Workspace Shell (`/staff/queue`, `/staff/admin`, `/staff/intakes/[intakeId]`):**
+   - `WorkspaceTopBar` shows the active facility chip (`DEMO-CLINIC-01`), the authenticated persona badge (`DEMO · ADMIN`, `DEMO · NURSE`, or `FIREBASE · <ROLE>`), and an explicit `"Sign out"` button.
+   - `StaffWorkspaceLayout` renders a role-aware desktop sidebar (`data-testid="workspace-sidebar"`) and responsive tablet/mobile workspace bar (`data-testid="workspace-mobile-nav"`):
+     - `admin` sees both **Facility administration** (`/staff/admin`) and **Clinical intake queue** (`/staff/queue`).
+     - `nurse` and `doctor` see **Clinical intake queue** (`/staff/queue`) and never see administrator navigation links.
+
+### 16.3 Five distinct user journeys
+
+1. **Journey 1 — Patient (`/` → `/intake`):**
+   - Selects **Start Patient Intake** on `/`.
+   - Enters the calm, mobile-first `.mf-pt` patient canvas with an always-visible emergency human-help safety banner, a 3-step patient progress header (`1. Share symptoms` → `2. Review & confirm` → `3. Submission & Milestone 2 boundary`), typed or voice input mode preview, synthetic example presets, optional patient context fields, mandatory confirmation checkbox, and an honest UX-1 Milestone 2 readiness notice (no fake submission success).
+2. **Journey 2 — Hackathon Judge as Demo Administrator (`/` or `/demo` → `/staff/admin` → `/staff/queue`):**
+   - Opens `/demo` and clicks **Enter as Demo Administrator** (`POST /api/demo/session/admin`).
+   - Lands directly on `/staff/admin` displaying live Neon PostgreSQL facility metrics (`GET /api/staff/admin/facility`: `activeStaffCount`, `totalIntakesCount`, `unassignedIntakesCount`), provisioned synthetic identities (`demo-admin-01`, `demo-staff-01`), and governance rules.
+   - Can switch to `/staff/queue` via the workspace sidebar or sign out cleanly (`POST /api/demo/logout`).
+3. **Journey 3 — Hackathon Judge as Demo Clinical Staff (`/` or `/demo` → `/staff/queue`):**
+   - Opens `/demo` and clicks **Enter as Demo Clinical Staff** (`POST /api/demo/session/staff`).
+   - Lands directly on `/staff/queue` as `demo-staff-01` (`nurse`), inspects queue KPIs, status/priority filters, 5-second visibility-aware sync badge, and the intentional empty-queue state (`data-testid="staff-queue-empty-state"`).
+   - Direct navigation to `/staff/admin` as `nurse` is blocked by server HTTP 403 (`ADMIN_ROLE_REQUIRED`) and displays `data-testid="admin-role-restricted-panel"` with a one-click return to `/staff/queue`.
+4. **Journey 4 — Normal Provisioned Clinical Staff (`/staff/login` → `/staff/queue`):**
+   - Signs in with Google via Firebase Authentication on `/staff/login`; server verifies Firebase ID token + active PostgreSQL `staff_profiles` and `facility_memberships`, then routes `nurse`/`doctor` directly to `/staff/queue`.
+5. **Journey 5 — Normal Provisioned Facility Administrator (`/staff/login` → `/staff/admin`):**
+   - Signs in with Google via Firebase Authentication on `/staff/login`; when authorized with PostgreSQL role `admin`, routes directly to `/staff/admin` with full workspace navigation between `/staff/admin` and `/staff/queue`.
+

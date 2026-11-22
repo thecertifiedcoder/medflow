@@ -59,7 +59,7 @@ export function StaffAccessGate({
     return (
       <PageContainer width="narrow">
         <div className="mb-6 grid gap-1.5">
-          <span className="mf-eyebrow">Protected clinical surface</span>
+          <span className="mf-eyebrow">Protected facility workspace</span>
           <h1 className="mf-t-page m-0 text-[var(--mf-text)]">
             {surfaceTitle}
           </h1>
@@ -88,10 +88,10 @@ export function StaffAccessGate({
             />
             <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
               {status === "initializing"
-                ? "Checking whether a Firebase authentication session is already active in this browser..."
+                ? "Checking whether a verified staff or Hackathon Demo session is active in this browser..."
                 : status === "authenticating"
                   ? "Completing Google Sign-In before verifying your clinical staff authorization..."
-                  : "Validating Firebase ID token signature on the server and resolving provisioned facility membership from PostgreSQL..."}
+                  : "Validating session credentials on the server and resolving provisioned facility membership from Neon PostgreSQL..."}
             </p>
           </div>
         </ClinicalPanel>
@@ -123,7 +123,7 @@ export function StaffAccessGate({
   return (
     <PageContainer width="narrow">
       <div className="mb-6 grid gap-1.5">
-        <span className="mf-eyebrow">Protected clinical surface</span>
+        <span className="mf-eyebrow">Protected facility workspace</span>
         <h1 className="mf-t-page m-0 text-[var(--mf-text)]">{surfaceTitle}</h1>
         <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
           {surfaceSubtitle}
@@ -133,8 +133,8 @@ export function StaffAccessGate({
       <ClinicalPanel
         source="nurse"
         sourceLabel="Restricted surface"
-        title="Access verification status"
-        subtitle="Server-verified ID token and provisioned PostgreSQL facility membership required"
+        title="Staff authentication required"
+        subtitle="Server-verified identity and active PostgreSQL facility membership required"
         action={
           status === "unprovisioned" ? (
             <Badge tone="warning" icon="shield">
@@ -152,9 +152,9 @@ export function StaffAccessGate({
         }
       >
         {status === "unauthenticated" && (
-          <Alert tone="danger" title="Staff authentication required">
+          <Alert tone="danger" title="Sign in or launch a Hackathon Demo role">
             {errorMessage ??
-              "Unauthenticated users cannot view clinical intake records or the facility queue. Sign in with a provisioned Google staff account or enter Hackathon Demo Mode from the overview page."}
+              "Unauthenticated visitors cannot access clinical intake queues or facility administration. Sign in with a provisioned Google staff account or enter Hackathon Demo Mode."}
           </Alert>
         )}
 
@@ -210,10 +210,17 @@ export function StaffAccessGate({
 
         <div className="flex flex-wrap gap-3 pt-1">
           {status === "unauthenticated" ? (
-            <ButtonLink href="/staff/login" variant="primary" size="md">
-              Go to staff sign in
-              <Icon name="arrow" size="btn" />
-            </ButtonLink>
+            <>
+              <ButtonLink href="/staff/login" variant="primary" size="md">
+                <Icon name="lock" size="btn" />
+                Staff Sign-In
+                <Icon name="arrow" size="btn" />
+              </ButtonLink>
+              <ButtonLink href="/demo" variant="secondary" size="md">
+                <Icon name="shield" size="btn" />
+                Hackathon Demo Access
+              </ButtonLink>
+            </>
           ) : (
             <>
               <Button
@@ -223,6 +230,9 @@ export function StaffAccessGate({
               >
                 Re-check authorization
               </Button>
+              <ButtonLink href="/demo" variant="secondary" size="md">
+                Hackathon Demo Access
+              </ButtonLink>
               <Button
                 variant="secondary"
                 size="md"
@@ -232,8 +242,8 @@ export function StaffAccessGate({
               </Button>
             </>
           )}
-          <ButtonLink href="/" variant="secondary" size="md">
-            Back to overview
+          <ButtonLink href="/" variant="tertiary" size="md">
+            Return to Home
           </ButtonLink>
         </div>
       </ClinicalPanel>

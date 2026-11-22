@@ -29,12 +29,6 @@ const SeedAdminInputSchema = z
 
 export type SeedAdminInput = z.infer<typeof SeedAdminInputSchema>;
 
-/**
- * Parses optional founder-supplied environment variables for seeding an initial
- * staff administrator alongside the synthetic demo facility.
- * Returns null if none of the SEED_ADMIN_* variables are set.
- * Throws if only a partial set is supplied so misconfigurations fail safely.
- */
 export function parseOptionalSeedAdminEnv(
   env: Record<string, string | undefined> = process.env,
 ): SeedAdminInput | null {
@@ -56,19 +50,9 @@ export function parseOptionalSeedAdminEnv(
 }
 
 /**
- * Idempotent founder-run CLI seed script for Neon PostgreSQL.
- *
- * Usage (ONLY after Neon database is provisioned and migrations have run):
- *   1. Facility only:
- *      DATABASE_URL_UNPOOLED="..." npx tsx src/db/seed.ts
- *   2. Facility + initial staff admin (using real verified Firebase Auth UID):
- *      DATABASE_URL_UNPOOLED="..." \
- *      SEED_ADMIN_UID="<verified-firebase-uid>" \
- *      SEED_ADMIN_EMAIL="<verified-email>" \
- *      SEED_ADMIN_DISPLAY_NAME="Dr. Synthetic Admin" \
- *      npx tsx src/db/seed.ts
- *
- * Never executed automatically during builds or client requests.
+ * Idempotent founder-run CLI seed script for Neon PostgreSQL (Phase DA-1 / UX-1 baseline).
+ * Seeds canonical facility `demo-clinic-01` (`DEMO-CLINIC-01`) and synthetic demo staff identities
+ * (`demo-admin-01`, `demo-staff-01`). Does not seed patient intake records during UX-1.
  */
 export async function runSeed(): Promise<void> {
   const connectionString = getMigrationDatabaseUrl();
@@ -110,10 +94,7 @@ export async function runSeed(): Promise<void> {
           },
         });
 
-      // Seed the two fixed synthetic Hackathon Demo Mode staff identities strictly
-      // inside the canonical synthetic facility `demo-clinic-01` (DA-1).
-      // These accounts are only usable when MEDFLOW_DEMO_MODE_ENABLED=true and are
-      // explicitly blocked from Firebase Bearer authentication.
+      // Seed fixed synthetic Hackathon Demo Mode staff identities (demo-admin-01, demo-staff-01)
       for (const demoIdentity of Object.values(SYNTHETIC_DEMO_IDENTITIES)) {
         await tx
           .insert(staffProfiles)

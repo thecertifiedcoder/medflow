@@ -35,12 +35,18 @@ export function StaffLoginPanel() {
     refreshAuthorization,
   } = useStaffAuth();
 
+  const isAdminRole = activeFacility?.role === "admin";
+  const primaryWorkspaceHref = isAdminRole ? "/staff/admin" : "/staff/queue";
+  const primaryWorkspaceLabel = isAdminRole
+    ? "Open Administrator Workspace"
+    : "Open Clinical Staff Queue";
+
   return (
     <ClinicalPanel
       source="nurse"
-      sourceLabel="Staff portal"
-      title="Staff sign in"
-      subtitle="Google Sign-In · Server ID token verification · PostgreSQL facility authorization"
+      sourceLabel="Staff authentication"
+      title="Google Sign-In for provisioned staff"
+      subtitle="Server-side Firebase ID token verification · PostgreSQL facility RBAC"
       action={
         <Badge
           tone={status === "authorized" ? "success" : "brand"}
@@ -107,8 +113,8 @@ export function StaffLoginPanel() {
             iconSpin
             title="Checking authentication state"
           >
-            Checking whether a Firebase clinical staff session or Google
-            sign-in callback is active in this browser...
+            Checking whether a clinical staff session or Google sign-in callback
+            is active in this browser...
           </Alert>
         </div>
       )}
@@ -153,9 +159,9 @@ export function StaffLoginPanel() {
         <div className="grid gap-4">
           <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
             Sign in with your Google account. MedFlow verifies your Firebase ID
-            token on the server and resolves your active clinical role and
+            token on the server and checks your active clinical role and
             facility membership in PostgreSQL before granting access to any
-            facility queue.
+            workspace.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
@@ -164,8 +170,9 @@ export function StaffLoginPanel() {
               loading={isSigningIn}
               onClick={() => void signInWithGoogle()}
               disabled={isSigningIn}
+              data-testid="google-signin-btn"
             >
-              {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
+              {!isSigningIn ? <Icon name="lock" size="btn" /> : null}
               {isSigningIn
                 ? preferredSignInMethod === "redirect"
                   ? "Redirecting to Google..."
@@ -184,7 +191,7 @@ export function StaffLoginPanel() {
             )}
             <ButtonLink href="/" variant="secondary" size="md">
               <Icon name="arrowLeft" size="btn" />
-              Back to overview
+              Back to Home
             </ButtonLink>
           </div>
         </div>
@@ -212,16 +219,16 @@ export function StaffLoginPanel() {
         <div className="grid gap-3">
           <Alert
             tone="warning"
-            title="Authenticated, but not provisioned as clinical staff"
+            title="Authenticated, but not provisioned as facility staff"
           >
             Google Sign-In and server-side ID token verification succeeded, but
-            no provisioned staff profile exists in MedFlow&apos;s database for
-            this account. No queue or patient records are accessible until an
-            administrator provisions your staff profile and facility membership.
+            no provisioned staff profile exists in MedFlow&apos;s PostgreSQL
+            database for this account. Authentication alone never grants access
+            to clinical records.
           </Alert>
           <div className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
             <p className="mf-t-label m-0 mb-2 font-semibold text-[var(--mf-text)]">
-              Verified Google identity
+              Verified Google identity (for administrator CLI provisioning)
             </p>
             <dl className="mf-dl m-0">
               <dt>UID</dt>
@@ -242,6 +249,9 @@ export function StaffLoginPanel() {
             >
               Re-check staff provisioning
             </Button>
+            <ButtonLink href="/demo" variant="secondary" size="md">
+              Use Hackathon Demo Access
+            </ButtonLink>
             <Button
               variant="secondary"
               size="md"
@@ -272,7 +282,7 @@ export function StaffLoginPanel() {
       )}
 
       {status === "authorized" && staffProfile && activeFacility && (
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           <Alert
             tone="success"
             title={
@@ -281,8 +291,8 @@ export function StaffLoginPanel() {
                 : "Staff session verified"
             }
           >
-            Signed in as <strong>{staffProfile.displayName}</strong> (
-            <span className="capitalize">{activeFacility.role}</span>) with{" "}
+            Signed in as <strong>{staffProfile.displayName}</strong> (role:{" "}
+            <strong className="uppercase">{activeFacility.role}</strong>) with{" "}
             {authMode === "demo"
               ? `server-signed HTTP-only demo session (${demoPersona === "admin" ? "Demo Administrator" : "Demo Clinical Staff"})`
               : "server-verified Firebase ID token"}{" "}
@@ -291,10 +301,15 @@ export function StaffLoginPanel() {
             <code className="mf-mono text-[13px]">{activeFacilityId}</code>).
           </Alert>
           <div className="flex flex-wrap gap-3">
-            <ButtonLink href="/staff/queue" variant="primary" size="md">
-              Open staff queue
+            <ButtonLink href={primaryWorkspaceHref} variant="primary" size="md">
+              {primaryWorkspaceLabel}
               <Icon name="arrow" size="btn" />
             </ButtonLink>
+            {isAdminRole && (
+              <ButtonLink href="/staff/queue" variant="secondary" size="md">
+                Open Clinical Queue
+              </ButtonLink>
+            )}
             <Button
               variant="secondary"
               size="md"
@@ -346,7 +361,7 @@ export function StaffLoginPanel() {
                 onClick={() => void signInWithGoogle()}
                 disabled={isSigningIn}
               >
-                {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
+                {!isSigningIn ? <Icon name="lock" size="btn" /> : null}
                 Sign in with Google
               </Button>
               {preferredSignInMethod === "redirect" ? (

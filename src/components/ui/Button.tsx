@@ -9,6 +9,7 @@ import { Icon } from "./Icon";
 export type ButtonVariant =
   | "primary"
   | "secondary"
+  | "onDark"
   | "tertiary"
   | "quiet"
   | "destructive"
@@ -19,6 +20,7 @@ export type ButtonSize = "sm" | "md" | "lg";
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "mf-btn--primary",
   secondary: "mf-btn--secondary",
+  onDark: "mf-btn--secondary",
   tertiary: "mf-btn--tertiary",
   quiet: "mf-btn--tertiary",
   destructive: "mf-btn--destructive",

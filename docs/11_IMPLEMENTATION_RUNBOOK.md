@@ -167,7 +167,19 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
 - Implemented HMAC-SHA256 signed HTTP-only cookie sessions (`src/lib/auth/demo-session.ts`), CSRF protection, server-side revocation (`POST /api/demo/logout`), persona endpoints (`POST /api/demo/session/admin`, `POST /api/demo/session/staff`, `GET /api/demo/status`), unified `resolveStaffSession`/`requireAuthorizedStaff` enforcement, and read-only admin-only `GET /api/staff/admin/facility`.
 - Updated `/` with the prominent **Try the MedFlow Demo** launcher (**Demo Administrator**, **Demo Clinical Staff**, **Start Patient Intake**), added active demo role badge & **Sign out** in header/workspace, and preserved Firebase Google Sign-In (`/staff/login`) completely intact.
 
-### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval)
+### Phase UX-1 — Platform Experience, Information Architecture & Interface Rework (implemented & verified under ADR `D-022`)
+
+- Reworked MedFlow's route structure and navigation into 7 focused screens with strict role and context separation:
+  - `/` — Public Home entry-point selector (**Patient Intake `/intake`**, **Staff Sign-In `/staff/login`**, **Hackathon Demo Access `/demo`**).
+  - `/intake` — Dedicated `.mf-pt` patient self-intake experience with `PatientTopBar` (zero staff/admin/demo links), emergency safety banner, 3-step journey, interactive typed/voice mode preview, synthetic presets, confirmation checkbox, and honest Milestone 2 readiness boundary.
+  - `/demo` — Dedicated Hackathon Demo Access evaluation hub routing **Enter as Demo Administrator** → `/staff/admin` and **Enter as Demo Clinical Staff** → `/staff/queue`.
+  - `/staff/login` — Dedicated Staff Google Sign-In screen with role-aware destination (`admin` → `/staff/admin`, `nurse`/`doctor` → `/staff/queue`) and quiet judge link to `/demo`.
+  - `/staff/queue` — Focused Clinical Staff Workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, with real PostgreSQL queue polling, workflow/priority filters, and an intentional empty state (`0` rows).
+  - `/staff/admin` — Dedicated Administrator Workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, backed by `GET /api/staff/admin/facility` and enforcing HTTP 403 / restricted UI (`data-testid="admin-role-restricted-panel"`) for non-admin roles.
+  - `/staff/intakes/[intakeId]` — Dedicated 6-section provenance-separated intake review workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`.
+- Verified across all 5 user journeys and 3 viewports (`1440×900`, `768×1024`, `390×844`) with zero Milestone 2 scope leakage.
+
+### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval after UX-1 review)
 
 - Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable PostgreSQL intake persistence (`POST /api/intakes` atomic transaction with `intake_created` / `transcript_confirmed` audit events).
 - Follow `D-015` (Option 1B): AI extraction is triggered and persisted only through an authenticated, active, facility-authorised staff session via server-side PostgreSQL transactions.
@@ -183,3 +195,4 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
 - Run the complete synthetic EIE test matrix and stop with a verified report.
 
 No milestone or phase may be silently combined with the next. Each requires its own explicit founder approval and stop report.
+

@@ -79,7 +79,7 @@ export interface FacilityAdminOverviewRecord {
 
 /**
  * Reusable server-only repository boundary for Neon PostgreSQL clinical staff reads.
- * Every tenant-owned method requires an explicit, server-verified `facilityId`.
+ * Every tenant-owned query requires an explicit, server-verified `facilityId`.
  */
 export interface StaffRepository {
   findStaffAuthorizationByUid(
@@ -98,10 +98,14 @@ export interface StaffRepository {
 }
 
 function toIso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
-function toNullableIso(value: Date | string | null | undefined): string | null {
+function toNullableIso(
+  value: Date | string | null | undefined,
+): string | null {
   if (!value) return null;
   return toIso(value);
 }
@@ -193,7 +197,9 @@ export function createDrizzleStaffRepository(
       ];
 
       if (params.workflowStatus) {
-        conditions.push(eq(patientIntakes.workflowStatus, params.workflowStatus));
+        conditions.push(
+          eq(patientIntakes.workflowStatus, params.workflowStatus),
+        );
       } else if (!params.includeCompleted) {
         conditions.push(ne(patientIntakes.workflowStatus, "completed"));
       }
@@ -293,8 +299,6 @@ export function createDrizzleStaffRepository(
       assertServerRuntime();
       const db = resolveDb();
 
-      // Strictly scoped by BOTH intake id and server-verified facility_id.
-      // Cross-facility records return null, preventing cross-tenant existence disclosure.
       const intakeRows = await db
         .select({
           id: patientIntakes.id,

@@ -170,7 +170,25 @@ The engine's checks establish quote location and provenance only. They are not c
 - [ ] `demo-clinic-01` and `DEMO-CLINIC-01` are the sole canonical synthetic facility identifiers (`demo-facility-001` and `DEMO-FACILITY` retired).
 - [ ] `DATABASE_URL` (runtime) and `DATABASE_URL_UNPOOLED` (migrations) remain strictly server-only; `EVIDENCE_HMAC_SECRET` remains deferred until Milestone 3.
 
-### Phases 1D-2 & 1D-3 (live Neon verification — pending founder approval & Neon credentials)
-- [ ] `drizzle-kit migrate` and idempotent `src/db/seed.ts` succeed cleanly against founder-provisioned Neon PostgreSQL.
-- [ ] Live SQL negative tests confirm PostgreSQL rejects cross-facility `intake_evidence`/`audit_events` inserts, `intake_evidence` field edits or `false -> true` flips, spoofed `audit_events` action/actor pairs, and inconsistent staff-review updates.
-- [ ] Authenticated staff session, facility-scoped queue polling, and cross-facility isolation pass end-to-end against Neon PostgreSQL.
+### Phases 1D-2 & 1D-3 (live Neon verification — verified against live Neon PostgreSQL)
+- [x] `drizzle-kit migrate` and idempotent `src/db/seed.ts` succeed cleanly against founder-provisioned Neon PostgreSQL.
+- [x] Live SQL negative tests confirm PostgreSQL rejects cross-facility `intake_evidence`/`audit_events` inserts, `intake_evidence` field edits or `false -> true` flips, spoofed `audit_events` action/actor pairs, and inconsistent staff-review updates.
+- [x] Authenticated staff session, facility-scoped queue polling, and cross-facility isolation pass end-to-end against Neon PostgreSQL.
+
+## 10. Phase UX-1 Platform Experience Rework test matrix (`D-022`)
+
+| Test ID | Journey / Viewport | Scenario | Expected outcome |
+|---|---|---|---|
+| UX1-01 | Public Home (`/`) | Visitor opens `/` | Displays 3 clear entry cards (`/intake`, `/staff/login`, `/demo`) with `PublicTopBar` and no embedded admin or clinical workspace clutter. |
+| UX1-02 | Journey 1 — Patient (`/intake`) | Visitor navigates `/` → `/intake` | Renders `.mf-pt` patient theme with `PatientTopBar` (zero staff/admin/demo links), emergency banner, 3-step progression, typed/voice mode preview, synthetic presets, confirmation checkbox, and honest Milestone 2 readiness boundary. |
+| UX1-03 | Journey 2 — Judge Demo Admin (`/demo` → `/staff/admin`) | Judge clicks **Enter as Demo Administrator** on `/demo` | Calls `POST /api/demo/session/admin`, sets signed HTTP-only cookie, redirects to `/staff/admin`, and renders live facility telemetry (`activeStaffCount: 2`, `totalIntakesCount: 0`, `unassignedIntakesCount: 0`). |
+| UX1-04 | Journey 2 — Admin Workspace Navigation (`/staff/admin` ↔ `/staff/queue`) | Demo Admin navigates to `/staff/queue` via `StaffWorkspaceLayout` | Admin sees both **Facility administration** (`/staff/admin`) and **Clinical intake queue** (`/staff/queue`) in the workspace sidebar and can switch between them seamlessly. |
+| UX1-05 | Journey 3 — Judge Demo Clinical Staff (`/demo` → `/staff/queue`) | Judge clicks **Enter as Demo Clinical Staff** on `/demo` | Calls `POST /api/demo/session/staff`, revokes any prior demo cookie, redirects to `/staff/queue`, and renders the clinical queue workspace as `demo-staff-01` (`nurse`). |
+| UX1-06 | Journey 3 — Intentional Empty Queue State (`/staff/queue`) | Clinical staff views queue when `demo-clinic-01` has `0` intake rows | Displays `data-testid="staff-queue-empty-state"` explaining the 3-step intake-to-review lifecycle with links to `/intake` and refresh controls; zero fabricated patient rows. |
+| UX1-07 | Journey 3 — Non-Admin Role Restriction (`/staff/admin`) | Clinical staff (`nurse`) navigates directly to `/staff/admin` | Workspace sidebar hides `/staff/admin`; direct visit receives HTTP 403 (`ADMIN_ROLE_REQUIRED`) and renders `data-testid="admin-role-restricted-panel"` with a button back to `/staff/queue`. |
+| UX1-08 | Intake Detail Boundary (`/staff/intakes/[intakeId]`) | Authenticated staff opens a non-existent UUID detail route | Renders inside `StaffWorkspaceLayout` with a clean `404` record-not-found state and return button to `/staff/queue`. |
+| UX1-09 | Journey 4 & 5 — Normal Staff Login (`/staff/login`) | Staff opens `/staff/login` | Displays dedicated Google Sign-In portal with role-aware destination (`admin` → `/staff/admin`, `nurse`/`doctor` → `/staff/queue`) and a quiet judge link to `/demo`. |
+| UX1-10 | Session Sign-Out | Active Demo Admin or Demo Staff clicks **Sign out** | Calls `POST /api/demo/logout`, clears/revokes the demo session cookie, and updates workspace/public header state cleanly. |
+| UX1-11 | Responsive Viewports (`1440×900`, `768×1024`, `390×844`) | Inspect `/`, `/intake`, `/demo`, `/staff/login`, `/staff/queue`, `/staff/admin` at desktop, tablet, and mobile widths | Zero horizontal overflow (`scrollWidth <= innerWidth`), readable typography, accessible navigation, and responsive sidebar/mobile workspace bar switching. |
+| UX1-12 | Phase Boundary Integrity | Verify no Milestone 2 or Milestone 3 endpoints or claims exist | Only Phase DA-1 / UX-1 endpoints are active; no fake submission persistence, no simulated Gemini responses, and no `EVIDENCE_HMAC_SECRET` usage. |
+

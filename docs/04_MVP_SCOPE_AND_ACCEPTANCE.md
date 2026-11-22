@@ -157,3 +157,17 @@ Additional acceptance criteria for the evidence-integrity milestone:
 - [ ] The engine never creates a diagnosis, clinical score, urgency classification, treatment recommendation or workflow priority.
 
 An exact quotation match proves only that the words can be located in the source narrative. It does not prove clinical truth or semantic correctness. See D-018 and `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
+
+## 7. Phase UX-1 Platform Experience Rework acceptance criteria (2026-11-22)
+
+Before Milestone 2 implementation begins, the application must satisfy the following Phase UX-1 information-architecture and role-separation acceptance criteria (`D-022`):
+
+- [x] `/` functions as a clear, uncluttered entry-point selection screen with three distinct cards: **1. Patient Intake (`/intake`)**, **2. Staff Sign-In (`/staff/login`)**, and **3. Hackathon Demo Access (`/demo`)**.
+- [x] `/intake` renders in the dedicated `.mf-pt` patient theme with `PatientTopBar` (`data-testid="patient-top-bar"`), zero staff/admin/demo navigation clutter, an always-visible emergency human-help banner, a 3-step patient journey structure, and an honest UX-1 Milestone 2 readiness boundary (no fake submission persistence).
+- [x] `/demo` provides a dedicated judge evaluation hub explaining synthetic demonstration data (`DEMO-CLINIC-01`) with one-click **Enter as Demo Administrator** (`POST /api/demo/session/admin` → `/staff/admin`) and **Enter as Demo Clinical Staff** (`POST /api/demo/session/staff` → `/staff/queue`).
+- [x] `/staff/login` is dedicated to provisioned staff Google Sign-In with role-aware post-authentication routing (`admin` → `/staff/admin`, `nurse`/`doctor` → `/staff/queue`) and a quiet link to `/demo` for judges.
+- [x] `/staff/queue` provides a focused clinical workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, with real PostgreSQL queue polling, workflow/priority filters, and an intentional, educational empty state (`0` synthetic intake rows in UX-1) without embedded admin panels.
+- [x] `/staff/admin` provides a dedicated facility administration workspace backed by `GET /api/staff/admin/facility` (`activeStaffCount`, `totalIntakesCount`, `unassignedIntakesCount`) for `admin` users and enforces HTTP 403 / restricted access UI (`data-testid="admin-role-restricted-panel"`) for `nurse`/`doctor` users.
+- [x] `/staff/intakes/[intakeId]` renders inside `StaffAccessGate` + `StaffWorkspaceLayout`, separating all 6 clinical sections (Patient source, AI draft, Supporting evidence, Staff review, Operational workflow, Audit timeline) and handling loading, 404 not-found, and error states cleanly.
+- [x] All 7 routes render without horizontal overflow across desktop (`1440×900`), tablet (`768×1024`), and mobile (`390×844`) viewports.
+

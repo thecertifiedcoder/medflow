@@ -12,7 +12,7 @@ import {
   type StaffRepository,
 } from "@/lib/db/staff-repository";
 import { assertServerRuntime } from "@/lib/env/server";
-import { jsonError } from "@/lib/http/errors";
+import { AppHttpError, jsonError } from "@/lib/http/errors";
 import type { StaffRole } from "@/lib/schemas/intake";
 import {
   FacilityIdSchema,
@@ -53,6 +53,9 @@ const NO_STORE_HEADERS = {
 function handleUnexpectedStaffApiError(error: unknown): NextResponse {
   if (error instanceof StaffAuthorizationError) {
     return jsonError(error.statusCode, error.errorCode, error.message);
+  }
+  if (error instanceof AppHttpError) {
+    return jsonError(error.status, error.code, error.publicMessage);
   }
   const safeDbError = toSafeDatabaseError(error);
   return jsonError(
@@ -153,8 +156,8 @@ export function parseStaffQueueSearchParams(
 
 /**
  * Core handler for GET /api/staff/session.
- * Verifies Firebase ID token server-side and resolves staff profile & active
- * facility membership authoritatively from Neon PostgreSQL.
+ * Verifies Firebase ID token or Hackathon Demo cookie server-side and resolves
+ * staff profile & active facility membership authoritatively from Neon PostgreSQL.
  */
 export async function handleStaffSessionGet(
   request: {
@@ -246,8 +249,8 @@ export async function handleStaffSessionGet(
 
 /**
  * Core handler for GET /api/staff/intakes.
- * Enforces Firebase identity + PostgreSQL facility membership and returns only
- * bounded queue summaries for the authenticated staff member's verified facility.
+ * Enforces Firebase identity or Demo session + PostgreSQL facility membership
+ * and returns only bounded queue summaries for the authenticated staff member's verified facility.
  */
 export async function handleStaffQueueGet(
   request: {

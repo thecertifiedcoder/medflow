@@ -7,6 +7,20 @@ export interface ApiErrorBody {
   };
 }
 
+export class AppHttpError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly publicMessage: string;
+
+  constructor(status: number, code: string, publicMessage: string) {
+    super(publicMessage);
+    this.name = "AppHttpError";
+    this.status = status;
+    this.code = code;
+    this.publicMessage = publicMessage;
+  }
+}
+
 export function jsonError(
   status: number,
   code: string,

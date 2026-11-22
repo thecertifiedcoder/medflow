@@ -224,6 +224,30 @@ export const CreateIntakeRequestSchema = z
   .strict();
 export type CreateIntakeRequest = z.infer<typeof CreateIntakeRequestSchema>;
 
+export const CreateIntakeResponseSchema = z
+  .object({
+    intakeId: z.string().min(1).max(128),
+    referenceCode: z.string().min(1).max(32),
+    facilityPublicCode: z.string().min(1).max(64),
+    inputMode: InputModeSchema,
+    aiStatus: AiStatusSchema,
+    createdAt: z.string().datetime(),
+    deduplicated: z.boolean(),
+  })
+  .strict();
+export type CreateIntakeResponse = z.infer<typeof CreateIntakeResponseSchema>;
+
+export const TranscribeAudioResponseSchema = z
+  .object({
+    transcriptRaw: z.string().min(1).max(INTAKE_LIMITS.maxNarrativeLength),
+    transcriptionModel: z.string().min(1).max(80),
+    durationSeconds: z.number().min(0).max(300).optional(),
+  })
+  .strict();
+export type TranscribeAudioResponse = z.infer<
+  typeof TranscribeAudioResponseSchema
+>;
+
 const ALLOWED_STATUS_TRANSITIONS: Record<
   WorkflowStatus,
   readonly WorkflowStatus[]
@@ -233,6 +257,12 @@ const ALLOWED_STATUS_TRANSITIONS: Record<
   awaiting_clarification: ["in_review", "completed"],
   completed: [],
 };
+
+export function getAllowedStatusTransitions(
+  from: WorkflowStatus,
+): readonly WorkflowStatus[] {
+  return ALLOWED_STATUS_TRANSITIONS[from];
+}
 
 export function isAllowedStatusTransition(
   from: WorkflowStatus,
