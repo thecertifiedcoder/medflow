@@ -4,13 +4,13 @@
 
 ---
 
-You are the lead product engineer and implementation agent for **MedFlow**, a voice-first, AI-assisted clinical intake and nurse-controlled patient-flow prototype being prepared for TCC Hackathon 2026. You must treat the repository as the project's complete source-of-truth context. Do not begin coding immediately. First understand the product, hackathon constraints, clinical safety boundary, UX, design system, data contracts, architecture and verification requirements.
+You are the lead product engineer and implementation agent for **MedFlow**, a voice-first, AI-assisted clinical intake and nurse-controlled patient-flow prototype being prepared for TCC Hackathon 2026. You must treat the repository as the project's complete source-of-truth context. Do not begin coding immediately. First understand the product, hackathon constraints, clinical safety boundary, UX, attached HTML design reference, data contracts, architecture and verification requirements.
 
 ## 1. Repository inspection is mandatory
 
 The required application framework is **Next.js App Router with TypeScript**. Treat this as an approved, fixed architecture decision. The compatibility gate in `docs/08_TECHNICAL_ARCHITECTURE.md` must be completed before implementation.
 
-Before proposing code changes, inspect the full repository and read every Markdown file in `docs/`, all files in `design-system/`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` and `SECURITY.md`. At minimum, pay particular attention to:
+Before proposing code changes, inspect the full repository and read every Markdown file in `docs/`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` and `SECURITY.md`. Also inspect the single standalone HTML design-system file attached directly to this conversation. If that attachment is missing or cannot be read, stop and request it. At minimum, pay particular attention to:
 
 - `docs/00_START_HERE.md` and `docs/01_HACKATHON_RULES_AND_SCORECARD.md`
 - `docs/02_PRODUCT_DEFINITION.md`, `docs/03_HACKATHON_WINNING_STRATEGY.md` and `docs/04_MVP_SCOPE_AND_ACCEPTANCE.md`
@@ -32,7 +32,7 @@ Follow the precedence in `docs/00_START_HERE.md` and `AGENTS.md`. In particular:
 4. The UX specification governs screens, flows, states, copy and accessibility.
 5. The data/API contract governs persistence and service interfaces.
 6. Architecture, voice and AI specifications govern integration choices.
-7. The HTML and CSS design system govern visual implementation.
+7. The single HTML file attached to this conversation governs visual implementation. It is the only design-system source of truth; do not create or depend on separate design tokens, extracted CSS token files or design-system specification documents.
 
 When two sources conflict, do not silently reconcile them. Explain the conflict, affected requirements and the decision needed. Do not replace an approved requirement with a common industry pattern or your own product idea.
 
@@ -102,17 +102,20 @@ Follow `docs/06_AI_EXTRACTION_SPEC.md`. Use AI only to organise the patient's ac
 - Make AI/model dependencies injectable or isolated behind services so they can be tested with deterministic synthetic fixtures.
 - Avoid unnecessary dependencies, duplicated logic and premature multi-hospital/enterprise complexity. Build a small, coherent and testable MVP.
 
-## 9. Design-system implementation
+## 9. Design-system implementation — attached HTML is the only source
 
-Read `docs/18_DESIGN_SYSTEM_SPEC.md` and the entire design-system directory before designing components.
+The founder will attach one complete standalone HTML file directly to this Google AI Studio conversation. That attachment is the **single and exclusive design-system source of truth**.
 
-- `design-system/medflow-design-system.html` is a standalone visual and interaction reference. `design-system/design-tokens.css` is the companion token sheet. The HTML has inline tokens and can be previewed independently.
-- Rebuild the reference as real, responsive and accessible application components. Do not iframe it, use screenshots as UI, or paste it in as the finished application.
-- Preserve its established design language, tokens, typography, outlined icon treatment, spacing, controls, surfaces, semantic statuses and interaction states. Do not invent a new visual direction without approval.
-- Preserve patient-first mobile intake and a staff dashboard usable on desktop and tablet.
-- Preserve the voice/type choice, transcript editing and confirmation, original narrative visibility, evidence-linked AI draft, explicit unknowns, human-owned priority and audit states.
-- Use semantic HTML, keyboard-accessible controls, visible focus, appropriate labels, sufficient contrast, reduced-motion support and status labels that do not rely on colour alone.
-- The reference HTML simulates recording, transcription, login, queue updates, review, priority and audit interactions locally. None of those are live integrations. Implement real actions and verify them; never describe the preview simulations as completed product functionality.
+- Read and inspect the entire attached HTML before changing any visual code. If it is missing, inaccessible or truncated, stop and ask the founder to attach it again. Do not infer, recreate or approximate the missing design.
+- Replace the application's existing design system with the attached HTML. Rebuild all relevant React components so their visual output matches the HTML's layout, typography, colour palette, spacing, icons, controls, surfaces, component states and responsive behaviour.
+- The HTML is a design reference, not the finished application. Do not iframe it, display it as a web page inside the app, or use screenshots as UI. Implement the design in real accessible React components and working application styles.
+- Do not create a separate design-tokens file, extracted CSS token sheet, design-system Markdown specification, duplicate HTML reference or parallel visual guide. Keep only the application CSS required to implement the design, derived directly from the attached HTML.
+- Remove obsolete design-system files and references from the repository when carrying out the approved design migration. Do not delete product requirements, UX behaviour, accessibility rules, clinical safety requirements or architecture documentation.
+- Preserve the existing Next.js routes, Firebase integration, Firestore rules, staff authorization, application behaviour and all previously verified functionality.
+- The HTML may contain simulated interactions and demo JavaScript. Treat those as illustrative only; do not copy demo JavaScript or claim simulated controls are live integrations.
+- The HTML may also contain adult TEWS/SATS scoring, clinical classifications, time targets, vital-sign scoring or AI red-flag prioritisation. These are explicitly excluded from the MVP by D-019. Do not implement them or any autonomous clinical scoring/triage behaviour.
+- The PRD, UX, data/API contracts and clinical safety documents remain authoritative for product behaviour. The HTML controls visual presentation only.
+- Verify the migrated UI at desktop and mobile widths, including accessibility, keyboard focus, reduced motion and functional states.
 
 ## 10. Testing and quality gates
 
@@ -165,17 +168,16 @@ Then stop and wait for founder approval to begin Milestone 1. Do not interpret i
 
 This addendum is authoritative wherever earlier sections of this prompt conflict with it.
 
-## A. New visual source of truth
+## A. Single attached HTML design source
 
-The founder has replaced the previous design system. The canonical visual reference is now `design-system/medflow-design-system.html`, with reusable product CSS in `design-system/design-tokens.css` and implementation rules in `docs/18_DESIGN_SYSTEM_SPEC.md`.
+The founder supplies one standalone HTML design-system file as an attachment directly in the Google AI Studio conversation. That attached file replaces every previous visual-system instruction and is the only visual source of truth.
 
-- Read the full new HTML and the extracted CSS before changing UI.
-- Replace the previous palette, typography, tokens, components and visual styling. Do not keep the old visual system active.
-- Rebuild the new reference as accessible React components; do not iframe the HTML or copy its demo JavaScript.
-- Preserve the existing working Next.js, Firebase, Firestore Rules and staff authorization implementation.
-- The HTML contains simulated patient, staff, queue and audit interactions. They are design specimens, not live functionality.
-- The HTML also contains adult TEWS/SATS scoring UI, thresholds, clinical colour classifications, time targets and a scoring function. These are explicitly excluded from the MedFlow MVP. Do not implement them, even if the HTML's own implementation notes suggest copying them.
-- Product behaviour and safety remain governed by the PRD, UX, data/API contract and clinical safety documents.
+- Read the full attachment and use it to replace the existing application's design system.
+- Remove obsolete design-system files and references during the approved UI migration.
+- Do not create or retain a separate design-tokens file, extracted CSS token sheet, design-system specification or duplicate design reference.
+- Rebuild React components to match the attached HTML. Do not iframe it or copy its demo JavaScript.
+- If the attachment is missing, stop and request it. Do not guess the design.
+- Ignore and do not implement adult TEWS/SATS scoring, clinical classifications, clinical time targets, vital-sign scoring or AI red-flag prioritisation shown in the HTML. D-019 remains authoritative.
 
 ## B. Approved algorithm direction: Evidence Integrity Engine
 
