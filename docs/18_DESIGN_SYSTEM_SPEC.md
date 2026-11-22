@@ -1,163 +1,148 @@
 # MedFlow — Design System Specification
 
-**Document ID:** MED-DS-018  
-**Version:** 0.1  
-**Status:** Visual baseline created for hackathon implementation  
-**Visual source of truth:** `design-system/medflow-design-system.html`  
-**Companion tokens:** `design-system/design-tokens.css`
+**Status:** Founder-approved visual source of truth, adopted 2026-11-22  
+**Canonical reference:** `design-system/medflow-design-system.html`  
+**Product CSS:** `design-system/design-tokens.css`  
+**Implementation target:** Existing Next.js App Router application  
+**Important:** This document governs visual implementation. Product behaviour, data permissions and clinical safety remain governed by the PRD, UX, data contract and safety specification.
 
-## 1. Purpose
+## 1. Source of truth
 
-This document defines how the HTML design-system reference must be used when implementing MedFlow. The HTML is a visual and interaction reference, not the production application. Its local preview interactions do not establish that authentication, recording, transcription, AI processing, persistence, real-time updates or audit logging have been implemented.
+The founder-approved uploaded file `medflow-design-system (1).html` replaces the previous MedFlow design-system reference in full.
+
+The repository now stores that source at `design-system/medflow-design-system.html`. Its reusable product CSS sections 1–4 (tokens, base, components and layout) are extracted into `design-system/design-tokens.css`. The HTML's section 5 (`.ds-*` documentation-page styling) is not product CSS.
+
+The previous visual system is superseded. Do not retain its former palette, typography, component styling or token names as the active design language. Migrate existing application components to the new system rather than layering both systems together.
 
 ## 2. Design philosophy
 
-MedFlow's interface should make patient communication easier and staff review clearer. Its visual identity is calm, restrained and operational rather than decorative or alarmist.
+The product should feel like a dependable clinical instrument: calm under pressure, clear when it matters, structured, restrained and honest about what it knows and who produced each piece of information.
 
-The system is governed by these principles:
+Three qualities must remain balanced:
 
-1. **Patient words first:** the confirmed narrative remains the source record and is always distinguishable from AI output.
-2. **Voice with an escape hatch:** voice and typed entry are equally visible. Typing remains available through microphone and transcription failure.
-3. **Evidence before interpretation:** extracted facts are visibly linked to source phrases; missing/unclear information remains explicit.
-4. **Human owns the workflow:** AI output is a draft. Authorised staff own review, workflow priority and status.
-5. **Calm, not alarmist:** avoid pulsing/red AI warnings, diagnostic language and visual cues that imply an AI clinical decision.
-6. **Density with legibility:** operational information may be dense, but never at the cost of readable text, clear hierarchy or accessible interaction.
-7. **Honest states:** the UI accurately distinguishes live, reconnecting, stale, failed, empty, loading and simulated states.
+- **Clinical authority:** precision, consistency, legibility and restrained use of semantic colour.
+- **Human warmth:** plain language, approachable patient-facing controls and respectful handling of patient words.
+- **Operational clarity:** obvious hierarchy, efficient scanning and visible system states.
+
+The information path is patient words → AI-assisted structuring → deterministic evidence checks → human staff review. The interface must make each source distinguishable. It must never imply that AI or a deterministic software check has made a clinical decision.
 
 ## 3. Visual foundations
 
-### 3.1 Palette
+### 3.1 Typography
 
-| Token | Value | Intended use |
+- Primary UI typeface: **IBM Plex Sans** (400, 500, 600, 700).
+- Monospaced typeface: **IBM Plex Mono** (400, 500, 600), for identifiers, timestamps, technical metadata and numeric data where appropriate.
+- Preserve the supplied system fallbacks so the application remains usable if Google Fonts cannot load.
+- Use the reference's rem-based type scale, line-height and weight tokens. Do not invent one-off typography values.
+
+### 3.2 Core colour palette
+
+Use the exact tokens in the supplied CSS. The primary visual anchors include:
+
+| Role | Token | Value |
 |---|---|---|
-| Deep ink | `#172C29` | Primary text and high-contrast surfaces |
-| Ink secondary | `#344742` | Secondary headings and body emphasis |
-| Muted | `#66756F` | Supporting text |
-| Canvas | `#F3F5F1` | Main page background |
-| Surface | `#FFFFFF` | Cards and inputs |
-| Surface soft | `#F7F9F6` | Secondary panels and inset regions |
-| Forest green | `#176D5C` | Primary action and product brand |
-| Forest strong | `#105648` | Hover/pressed primary action |
-| Soft mint | `#E3F0EB` | Selected states and quiet brand surfaces |
-| Warm accent | `#C78B42` | Small editorial accents only |
-| Success | `#26745A` | Confirmed/success states |
-| Information | `#356C86` | Informational states |
-| Warning | `#98621D` | Needs attention / uncertainty |
-| Error | `#A34C42` | Failure and destructive states |
+| Primary | `--mf-primary` | `#087E8B` |
+| Primary dark / text links | `--mf-primary-dark` | `#075E68` |
+| Primary tint | `--mf-primary-tint` | `#E3F3F5` |
+| Command navy | `--mf-navy-900` | `#0B1D2E` |
+| Sidebar navy | `--mf-navy-800` | `#10283D` |
+| Canvas | `--mf-canvas` | `#F4F7FA` |
+| Surface | `--mf-surface` | `#FFFFFF` |
+| Main text | `--mf-text` | `#142536` |
+| Secondary text | `--mf-text-secondary` | `#536477` |
+| Input boundary | `--mf-border-input` | `#6F8294` |
 
-Semantic state meaning must also be communicated through text and/or icon. Never rely on colour alone.
+The CSS also defines semantic status colours and separate source/provenance colours. Use them only with text, iconography and accessible contrast; never communicate meaning through colour alone.
 
-### 3.2 Workflow priority colours
+### 3.3 Information provenance
 
-The reference uses subdued visual treatments for the three staff-assigned workflow labels:
+The reference establishes a separate visual axis for who produced information:
 
-- `Immediate review`
-- `Priority review`
-- `Routine review`
-- `Unassigned`
+- Patient: `data-source="patient"`
+- AI-generated draft: `data-source="ai"`
+- Deterministic calculation/check: `data-source="calc"`
+- Nurse/staff-entered or decided: `data-source="nurse"`
 
-These are queue-organisation labels, not a validated clinical triage scale, not an autonomous risk classification and not a treatment-time promise. Always display the phrase `Staff-assigned workflow priority` or an equivalent contextual label.
+Use these distinctions consistently. For the MVP, `calc` may identify deterministic evidence-integrity checks and technical calculations only. It must not be used to imply an approved clinical score.
 
-### 3.3 Typography
+### 3.4 Layout and components
 
-- Interface typography: Inter where available, falling back to the native system UI sans-serif stack.
-- Display typography: Georgia or system serif for selected editorial headings only.
-- Body text must remain comfortably readable on mobile and staff layouts.
-- Use compact typography for metadata, not for patient narratives, evidence quotes or important instructions.
+Rebuild the reusable `.mf-*` product language as accessible React components. Follow the HTML's sections 1–4 for:
 
-No remote font is required. The HTML must remain usable offline.
+- tokens, resets, typography, focus and reduced motion;
+- buttons, fields, segmented controls, badges, chips, banners, cards/panels, evidence panels, tables, queue rows, timelines and dialogs;
+- patient-facing layout and staff command layout;
+- responsive behaviour, keyboard interaction and live-region patterns.
 
-### 3.4 Spacing, shape and elevation
+Use the reference's icon geometry and outlined icon treatment. Adapt the existing `Icon.tsx` abstraction rather than introducing a second icon system without a clear need. Preserve the priority glyphs only if they are used for already-approved non-clinical workflow labels; do not use them to imply SATS/TEWS classifications.
 
-Use the token scale in `design-system/design-tokens.css`. Core spacing values: 4, 8, 12, 16, 20, 24, 32, 40, 48 and 64px. Use small radii for controls, medium radii for cards, and larger radii only for major containers. Shadows should be restrained and must not replace borders as the primary grouping mechanism.
+## 4. What to port and what not to port
 
-### 3.5 Iconography
+### Port as visual design
 
-Use simple outline icons with consistent stroke weight. The standalone HTML provides an inline SVG set. In the application, use a consistent icon library or equivalent SVG assets; do not mix emoji with outline icons in operational controls. Every icon-only control requires an accessible name; text labels are preferred for important patient and staff actions.
+- Core palette, typography, spacing, sizing, borders, radii, focus, shadows and responsive rules.
+- Patient intake and staff command-centre layout patterns, adjusted to the canonical routes in `docs/14_UX_AND_USER_FLOWS.md`.
+- Patient-source, AI-draft and staff-source presentation.
+- Evidence cards, original narrative panels, AI draft panels, missing/unclear states, audit presentation, forms, dialogs and queue components.
+- Clear connection, loading, empty, error and unavailable states.
+- Accessibility behaviours: visible focus, semantic HTML, keyboard operation, live regions, reduced motion, non-colour status cues and narrow-screen reflow.
 
-## 4. Required application surfaces
+### Do not port as active product behaviour
 
-The design system demonstrates the visual language for:
+The HTML contains a complete illustrative adult TEWS/SATS experience and JavaScript reference function. Those are not approved MedFlow MVP requirements.
 
-### Patient
-- Intake start / demo and safety notice.
-- Describe concern with equal voice and typing options.
-- Recording state and explicit start/stop/cancel controls.
-- Transcript review, edit and confirmation.
-- Submission progress and confirmation/reference.
-- Microphone permission, unsupported browser, transcription failure and typed fallback states.
+Do not implement or expose:
 
-### Staff
-- Staff login visual reference.
-- Clinical command queue.
-- Queue rows and extraction/workflow status labels.
-- Intake detail with confirmed source narrative beside AI draft.
-- Evidence-linked facts and missing/unclear items.
-- Staff review and correction.
-- Staff-assigned workflow priority and status actions.
-- Audit timeline.
-- Loading, empty, reconnecting, offline, error and unauthorised states.
+- TEWS calculation, SATS classification or any derived red/orange/yellow/green clinical class;
+- clinical time targets such as immediate, under 10 minutes, under 60 minutes or under 240 minutes;
+- vital-sign capture/scoring, triage overrides, clinical queue ordering or any automatic clinical urgency classification;
+- AI red-flag scoring, AI-generated emergency classifications or AI-driven queue reordering;
+- pediatric scoring or inferred demographic/clinical fields;
+- any design-preview simulation as if it were a live application feature.
 
-## 5. Interaction and component rules
+The supplied scoring function, threshold table, classification badges and time targets remain quarantined as reference material pending separate clinical governance and validation. See Decision D-019 and `docs/07_CLINICAL_SAFETY_AND_PRIVACY.md`.
 
-- All primary actions in the actual app must work; never ship inert controls.
-- Use persistent, visible focus states and semantic form labels.
-- Preserve patient-entered text through retryable failures.
-- Ask for microphone permission only after an explicit user action.
-- Show a visible recording state, elapsed time and stop/cancel controls.
-- Patient must inspect and confirm the final transcript/narrative before submission.
-- Do not block patient confirmation on downstream AI extraction.
-- Original narrative, raw transcript, AI draft and staff-reviewed copy are distinct data concepts.
-- Staff priority changes and review corrections must go through authorised data operations and create audit events.
-- In a stale or disconnected state, never display `Live`.
-- Respect `prefers-reduced-motion`; do not use flashing or pulsing AI-generated warning effects.
+## 5. Product behaviour remains governed elsewhere
 
-## 6. Responsive rules
+The design reference does not override:
 
-- Patient UI is mobile-first and single-column.
-- Primary touch controls must be easy to use on a narrow Android device.
-- Voice controls and primary actions must not require horizontal scrolling.
-- The staff dashboard is desktop-first, with a split queue/detail layout where space permits.
-- On tablet or narrow layouts, staff queue and detail may become sequential views or a drawer.
-- Do not preserve dashboard density by shrinking text below comfortable readability.
+1. `docs/07_CLINICAL_SAFETY_AND_PRIVACY.md` for clinical safety and privacy;
+2. `docs/13_PRODUCT_REQUIREMENTS.md` and `docs/04_MVP_SCOPE_AND_ACCEPTANCE.md` for product scope and acceptance;
+3. `docs/14_UX_AND_USER_FLOWS.md` for routes, user journeys, states and copy;
+4. `docs/09_DATA_MODEL_AND_API_CONTRACTS.md` for persistence and API contracts;
+5. `docs/08_TECHNICAL_ARCHITECTURE.md` for the Starter Tier architecture and server/client boundaries.
 
-## 7. Accessibility baseline
+In particular, workflow priority remains a staff-assigned operational queue label: `unassigned`, `immediate_review`, `priority_review` or `routine_review`. It is not a clinical triage category, validated severity score or treatment-time promise.
 
-- Semantic headings, buttons, labels, inputs and status announcements.
-- Programmatically associated labels and inline errors.
-- Visible keyboard focus.
-- Textual recording state (not colour or animation alone).
-- Adequate contrast for text and status treatments.
-- Reduced-motion support.
-- No autoplay audio.
-- No important information available only on hover.
+The original confirmed patient narrative must remain immutable and visible. AI content is a draft. Staff review/correction is distinct and auditable.
 
-## 8. Design preview limitation
+## 6. Implementation rules
 
-The HTML includes simulated patient and staff interactions to communicate visual state transitions. Specifically:
+- Rebuild the reference in React; do not iframe the HTML or use screenshots as application UI.
+- Do not copy the HTML's `<script>` demo logic into the application. It simulates recording, authentication, queue data, scoring and staff actions.
+- Do not copy `.ds-*` documentation-page styles into the product stylesheet.
+- Use the extracted product CSS as the baseline, then split/organise it into application styles only where that preserves exact token values and behaviour.
+- Keep the existing working Next.js routes, Firebase integration and security boundaries. Design migration must not rewrite or bypass authentication, Firestore rules or data contracts.
+- Replace old styling and primitives cleanly; do not run two competing token systems.
+- Every visible control must perform a real approved action or be visibly non-interactive. No inert controls, fabricated metrics, fake patient records or simulated submissions in the running app.
+- Use synthetic patient content only.
+- Record any design-to-product conflict before implementation; do not silently implement a clinical feature because it appears in the HTML.
 
-- voice recording is simulated; no microphone is accessed;
-- transcription is simulated using fixed synthetic sample text;
-- intake confirmation is simulated; no database write occurs;
-- staff authentication is a visual reference only;
-- queue search and record selection are local browser interactions;
-- priority selection/reason confirmation is a local preview and does not persist;
-- audit reveal displays illustrative synthetic events only;
-- no Gemini API or Firebase connection exists in the design artifact.
+## 7. Migration acceptance criteria
 
-The implementation and README must not claim any of these as implemented product functionality until separately built and tested.
+The design migration is complete only when:
 
-## 9. Source-of-truth precedence
+- [ ] The old visual tokens and styles are no longer active in application routes.
+- [ ] Application routes use the new palette, IBM Plex typography, spacing, component and icon language.
+- [ ] Patient intake remains clear and usable on narrow mobile screens.
+- [ ] Staff views remain usable at tablet and desktop widths.
+- [ ] Patient narrative, AI draft, deterministic evidence check and staff-authored content are visually distinguishable.
+- [ ] Loading, empty, error, unavailable, focus and reduced-motion states are implemented.
+- [ ] Existing authentication, facility-scoped access and Firestore security behaviour remain intact.
+- [ ] No TEWS/SATS calculation, classification, time target, vital-sign scoring or autonomous urgency behaviour is active.
+- [ ] Typecheck, lint, production build and responsive/browser checks pass.
+- [ ] A screenshot set shows the actual running application, not the HTML demo.
 
-- `13_PRODUCT_REQUIREMENTS.md` defines feature requirements and acceptance criteria.
-- `14_UX_AND_USER_FLOWS.md` defines screen behaviour, content, states and user journeys.
-- `07_CLINICAL_SAFETY_AND_PRIVACY.md` overrides any design that could imply autonomous clinical decision-making or unsafe patient behaviour.
-- `09_DATA_MODEL_AND_API_CONTRACTS.md` defines source/AI/staff-reviewed data separation.
-- `medflow-design-system.html` defines the visual treatment and reusable component patterns.
-- `design-tokens.css` provides a companion copy of the visual tokens for application implementation.
+## 8. Next implementation boundary
 
-If a visual pattern conflicts with the PRD, UX, data contract or safety document, the product requirements govern. Record and resolve the conflict rather than silently changing product behaviour.
-
-## 10. Approval note
-
-This is design-system version 0.1. It is a first visual baseline created for the TCC Hackathon 2026 prototype. Final implementation may refine spacing or component details after validation on the target phone and staff viewport, but must preserve the product and safety principles above.
+Milestone 1C is a design-system migration only. It must not start voice intake, patient persistence or Gemini extraction. Those remain in Milestone 2 and later milestones, each requiring separate approval as recorded in the implementation runbook.
