@@ -57,3 +57,15 @@ If documents conflict, stop and report the conflict. Do not silently invent a re
 - After each milestone, run relevant tests, inspect the result and report actual outcomes and remaining gaps.
 - Update the README, sprint log, architecture notes, feature status and AI disclosure only with verified facts.
 - Keep the repository organised; do not add generated build output, dependency directories, local secrets, audio recordings or raw patient data.
+
+
+## Founder-approved visual and algorithm update (2026-11-22)
+
+- The canonical visual source is `design-system/medflow-design-system.html`; reusable product CSS is `design-system/design-tokens.css`; implementation rules are in `docs/18_DESIGN_SYSTEM_SPEC.md`.
+- This replaces the previous MedFlow visual system. Do not preserve the previous active palette or typography.
+- The reference HTML's JavaScript is demo-only. Do not port it into the application.
+- Adult TEWS/SATS scoring, clinical classes/time targets, vital-sign scoring and AI red-flag prioritisation shown in the reference are not approved MVP features. Do not implement them.
+- The approved algorithm direction is the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. It verifies exact source-quote location and provenance, not clinical truth.
+- Exact quote match is not semantic validation. No aggregate trust score, diagnosis, urgency score or autonomous priority.
+- Preserve the original narrative, AI draft and staff-reviewed copy as separate records. Staff retains all clinical and workflow authority.
+- Milestone 1C (design migration), Milestone 2 (intake/Gemini) and Milestone 3 (Evidence Integrity Engine) each require explicit founder approval before implementation.
