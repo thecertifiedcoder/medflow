@@ -1,85 +1,92 @@
-import type { AuditActorType } from "@/lib/schemas/intake";
-import { Badge, type BadgeTone } from "./Badge";
+import type { AuditActorType, StaffRole } from "@/lib/schemas/intake";
+import { SourceTag, type SignalSource } from "./Badge";
 
 export interface TimelineEntry {
-  readonly id: string;
-  readonly title: string;
-  readonly actorType: AuditActorType;
-  readonly actorLabel: string;
-  readonly timestampLabel: string;
-  readonly transitionLabel?: string;
-  readonly reason?: string;
-  readonly isDemo?: boolean;
+  id: string;
+  timestamp: string;
+  actorType: AuditActorType;
+  actorDisplayName?: string;
+  actorRole?: StaffRole;
+  actionLabel: string;
+  fromValue?: string;
+  toValue?: string;
+  reason?: string;
+  isOverride?: boolean;
 }
 
-const ACTOR_TONE: Record<AuditActorType, BadgeTone> = {
-  patient: "info",
-  staff: "brand",
-  system: "neutral",
-};
-
-const ACTOR_TYPE_TEXT: Record<AuditActorType, string> = {
-  patient: "Patient",
-  staff: "Staff",
-  system: "System",
+const ACTOR_SOURCE_MAP: Record<
+  AuditActorType,
+  { source: SignalSource; label: string }
+> = {
+  patient: { source: "patient", label: "Patient" },
+  staff: { source: "nurse", label: "Staff" },
+  system: { source: "calc", label: "System" },
 };
 
 export interface TimelineProps {
   entries: readonly TimelineEntry[];
-  emptyMessage?: string;
   className?: string;
 }
 
-export function Timeline({
-  entries,
-  emptyMessage = "No audit events recorded yet.",
-  className = "",
-}: TimelineProps) {
-  if (entries.length === 0) {
-    return (
-      <p className="m-0 text-[13px] text-[var(--mf-muted)]">{emptyMessage}</p>
-    );
-  }
-
+/**
+ * Append-only workflow audit timeline (.mf-audit) with IBM Plex Mono timestamps
+ * and explicit patient / staff / system actor provenance tags (D-007).
+ */
+export function Timeline({ entries, className = "" }: TimelineProps) {
   return (
-    <ol className={`m-0 grid list-none p-0 ${className}`.trim()}>
-      {entries.map((entry, idx) => {
-        const isLast = idx === entries.length - 1;
+    <ol className={`mf-audit m-0 list-none p-0 ${className}`.trim()}>
+      {entries.map((entry) => {
+        const actorMeta = ACTOR_SOURCE_MAP[entry.actorType];
+        const actorRoleLabel =
+          entry.actorType === "staff" && entry.actorRole
+            ? `Staff · ${entry.actorRole}`
+            : actorMeta.label;
+        const highlightOverride =
+          entry.isOverride || Boolean(entry.fromValue && entry.toValue);
+
         return (
           <li
             key={entry.id}
-            className="grid grid-cols-[20px_1fr] gap-2.5 min-h-[52px]"
+            className={`mf-audit__item ${
+              highlightOverride ? "mf-audit__item--override" : ""
+            }`.trim()}
           >
-            <div className="relative flex justify-center" aria-hidden="true">
-              {!isLast && (
-                <span className="absolute top-3 bottom-[-4px] w-px bg-[var(--mf-line-strong)]" />
-              )}
-              <span className="z-10 mt-1.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--mf-brand-soft)] bg-[var(--mf-brand)]" />
-            </div>
-
-            <div className={isLast ? "pb-1" : "pb-4"}>
+            <time className="mf-audit__time">{entry.timestamp}</time>
+            <div className="mf-audit__what">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] font-bold text-[var(--mf-ink)]">
-                  {entry.title}
-                </span>
-                <Badge tone={ACTOR_TONE[entry.actorType]}>
-                  {ACTOR_TYPE_TEXT[entry.actorType]}
-                </Badge>
+                <SourceTag source={actorMeta.source} label={actorRoleLabel} />
+                {entry.actorDisplayName ? (
+                  <span className="text-[13px] font-medium text-[var(--mf-text-secondary)]">
+                    {entry.actorDisplayName}
+                  </span>
+                ) : null}
               </div>
-              <p className="m-0 mt-0.5 text-[12px] text-[var(--mf-muted)]">
-                {entry.actorLabel} · {entry.timestampLabel}
-                {entry.isDemo ? " · DEMO DATA" : ""}
-              </p>
-              {entry.transitionLabel && (
-                <p className="m-0 mt-1 text-[12px] font-medium text-[var(--mf-ink-secondary)]">
-                  {entry.transitionLabel}
-                </p>
+
+              <div className="font-semibold text-[var(--mf-text)]">
+                {entry.actionLabel}
+              </div>
+
+              {(entry.fromValue || entry.toValue) && (
+                <div className="mf-mono text-[12px] text-[var(--mf-text-secondary)]">
+                  {entry.fromValue ? <span>{entry.fromValue}</span> : null}
+                  {entry.fromValue && entry.toValue ? (
+                    <span className="mx-1.5" aria-hidden="true">
+                      →
+                    </span>
+                  ) : null}
+                  {entry.toValue ? (
+                    <strong className="font-semibold text-[var(--mf-text)]">
+                      {entry.toValue}
+                    </strong>
+                  ) : null}
+                </div>
               )}
-              {entry.reason && (
-                <p className="m-0 mt-1 rounded-[7px] bg-[var(--mf-surface-soft)] px-2.5 py-1.5 text-[12px] text-[var(--mf-ink-secondary)]">
-                  Reason: {entry.reason}
+
+              {entry.reason ? (
+                <p className="m-0 text-[13px] text-[var(--mf-text-secondary)]">
+                  Reason: &ldquo;{entry.reason}&rdquo;
                 </p>
-              )}
+              ) : null}
             </div>
           </li>
         );

@@ -1,27 +1,21 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { SourceTag, type SignalSource } from "./Badge";
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  surface?: "default" | "soft";
-  padded?: boolean;
+  subtle?: boolean;
   children: ReactNode;
 }
 
 export function Card({
-  surface = "default",
-  padded = false,
+  subtle = false,
   className = "",
   children,
-  ...rest
+  ...props
 }: CardProps) {
-  const bg =
-    surface === "soft"
-      ? "bg-[var(--mf-surface-soft)]"
-      : "bg-[var(--mf-surface)]";
-
   return (
     <div
-      className={`rounded-[var(--mf-radius-md)] border border-[var(--mf-line)] shadow-[var(--mf-shadow-1)] ${bg} ${padded ? "p-5" : ""} ${className}`.trim()}
-      {...rest}
+      className={`mf-card ${subtle ? "mf-card--subtle" : ""} ${className}`.trim()}
+      {...props}
     >
       {children}
     </div>
@@ -42,30 +36,82 @@ export function CardHeader({
   className = "",
 }: CardHeaderProps) {
   return (
-    <div
-      className={`flex flex-wrap items-center justify-between gap-3 border-b border-[var(--mf-line)] px-5 py-3.5 ${className}`.trim()}
-    >
+    <div className={`mf-panel__head ${className}`.trim()}>
       <div className="min-w-0">
-        <h3 className="m-0 text-[14px] font-bold tracking-[-0.015em] text-[var(--mf-ink)]">
-          {title}
-        </h3>
-        {subtitle && (
-          <p className="m-0 mt-0.5 text-[12px] text-[var(--mf-muted)]">
-            {subtitle}
-          </p>
-        )}
+        <h3 className="mf-panel__title m-0">{title}</h3>
+        {subtitle ? (
+          <p className="mf-panel__note m-0 mt-0.5">{subtitle}</p>
+        ) : null}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }
 
-export function CardBody({
-  children,
-  className = "",
-}: {
+export interface CardBodyProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
-  className?: string;
-}) {
-  return <div className={`p-5 ${className}`.trim()}>{children}</div>;
+}
+
+export function CardBody({
+  className = "",
+  children,
+  ...props
+}: CardBodyProps) {
+  return (
+    <div className={`mf-panel__body ${className}`.trim()} {...props}>
+      {children}
+    </div>
+  );
+}
+
+export interface ClinicalPanelProps extends HTMLAttributes<HTMLElement> {
+  source?: SignalSource;
+  sourceLabel?: string;
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  note?: string;
+  bodyClassName?: string;
+  children: ReactNode;
+}
+
+/**
+ * Structured clinical panel with 3px provenance top rule (.mf-panel).
+ */
+export function ClinicalPanel({
+  source,
+  sourceLabel,
+  title,
+  subtitle,
+  action,
+  note,
+  bodyClassName = "",
+  className = "",
+  children,
+  ...props
+}: ClinicalPanelProps) {
+  return (
+    <section
+      className={`mf-panel ${className}`.trim()}
+      data-source={source}
+      {...props}
+    >
+      <div className="mf-panel__head">
+        <div className="min-w-0">
+          <h3 className="mf-panel__title m-0">{title}</h3>
+          {subtitle ? (
+            <p className="mf-panel__note m-0 mt-0.5">{subtitle}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {source ? <SourceTag source={source} label={sourceLabel} /> : null}
+          {action}
+        </div>
+      </div>
+      <div className={`mf-panel__body ${bodyClassName}`.trim()}>
+        {children}
+        {note ? <p className="mf-panel__note m-0">{note}</p> : null}
+      </div>
+    </section>
+  );
 }

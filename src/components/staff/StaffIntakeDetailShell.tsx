@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -12,8 +13,7 @@ import {
   Alert,
   Badge,
   ButtonLink,
-  Card,
-  CardBody,
+  ClinicalPanel,
   Icon,
 } from "@/components/ui";
 import { auth, db } from "@/lib/firebase/client";
@@ -93,62 +93,92 @@ function AuthorizedIntakeDetail({
   }, [intakeId, staffProfile.facilityIds]);
 
   return (
-    <PageContainer width="narrow">
-      <Card>
-        <CardBody className="grid gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h1 className="m-0 text-[18px] font-bold text-[var(--mf-ink)]">
-                Intake detail review
-              </h1>
-              <p className="m-0 text-[12px] text-[var(--mf-muted)]">
-                Facility{" "}
-                <code className="mf-mono text-[12px]">{activeFacilityId}</code>{" "}
-                · Staff: {staffProfile.displayName}
-              </p>
-            </div>
-            <Badge tone="brand">Facility-scoped</Badge>
-          </div>
+    <PageContainer width="standard">
+      <nav aria-label="Breadcrumb" className="mf-crumbs mb-4">
+        <Link href="/staff/queue">Patient queue</Link>
+        <Icon
+          name="chevron"
+          size="sm"
+          className="text-[var(--mf-text-secondary)]"
+        />
+        <span aria-current="page" className="mf-mono">
+          {recordMeta?.referenceCode ?? intakeId}
+        </span>
+      </nav>
 
-          {lookupState === "loading" && (
-            <p className="m-0 text-[13px] text-[var(--mf-muted)]">
+      <div className="mf-detail-head mb-6 justify-between">
+        <div>
+          <span className="mf-eyebrow">Facility-scoped intake record</span>
+          <h1 className="mf-detail-head__id m-0 mt-1 text-[var(--mf-text)]">
+            {recordMeta?.referenceCode ?? intakeId}
+          </h1>
+          <p className="mf-t-body-sm m-0 mt-1 text-[var(--mf-text-secondary)]">
+            Facility{" "}
+            <code className="mf-mono text-[13px] text-[var(--mf-text)]">
+              {activeFacilityId}
+            </code>{" "}
+            · Reviewing staff: {staffProfile.displayName}
+          </p>
+        </div>
+        <Badge tone="brand" icon="lock">
+          Facility-scoped
+        </Badge>
+      </div>
+
+      <ClinicalPanel
+        source="nurse"
+        sourceLabel="Staff detail view"
+        title="Intake record authorization"
+        subtitle="Verified through Firestore Security Rules and facility membership"
+      >
+        {lookupState === "loading" && (
+          <div className="flex items-center gap-3 py-2">
+            <Icon
+              name="loader"
+              size="md"
+              spin
+              className="text-[var(--mf-primary-dark)]"
+            />
+            <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
               Checking facility authorization for this intake record...
             </p>
-          )}
-
-          {lookupState === "not_found" && (
-            <Alert tone="info" title="Intake record not found">
-              No intake record with this identifier exists in your authorised
-              facility.
-            </Alert>
-          )}
-
-          {lookupState === "denied" && (
-            <Alert tone="danger" title="Facility access denied">
-              Firestore Security Rules blocked access to this record because it
-              does not belong to your authorised facility assignments.
-            </Alert>
-          )}
-
-          {lookupState === "found" && recordMeta && (
-            <Alert tone="success" title={`Record ${recordMeta.referenceCode} authorized`}>
-              Facility-scoped read succeeded for{" "}
-              <code className="mf-mono text-[12px]">
-                {recordMeta.facilityId}
-              </code>
-              . Evidence-linked AI brief review, staff corrections, and priority
-              mutation controls will be implemented in Milestone 2/3.
-            </Alert>
-          )}
-
-          <div className="flex flex-wrap gap-3">
-            <ButtonLink href="/staff/queue" variant="secondary" size="md">
-              <Icon name="arrow" size="sm" className="rotate-180" />
-              Back to staff queue
-            </ButtonLink>
           </div>
-        </CardBody>
-      </Card>
+        )}
+
+        {lookupState === "not_found" && (
+          <Alert tone="info" title="Intake record not found">
+            No intake record with this identifier exists in your authorised
+            facility.
+          </Alert>
+        )}
+
+        {lookupState === "denied" && (
+          <Alert tone="danger" title="Facility access denied">
+            Firestore Security Rules blocked access to this record because it
+            does not belong to your authorised facility assignments.
+          </Alert>
+        )}
+
+        {lookupState === "found" && recordMeta && (
+          <Alert
+            tone="success"
+            title={`Record ${recordMeta.referenceCode} authorized`}
+          >
+            Facility-scoped read succeeded for{" "}
+            <code className="mf-mono text-[13px]">{recordMeta.facilityId}</code>
+            . Evidence-linked AI brief review, deterministic Evidence Integrity
+            verification, staff corrections, and operational priority controls
+            will be enabled in Milestones 2 and 3.
+          </Alert>
+        )}
+
+        <div className="flex flex-wrap gap-3 pt-1">
+          <ButtonLink href="/staff/queue" variant="secondary" size="md">
+            <Icon name="arrowLeft" size="btn" />
+            Back to staff queue
+          </ButtonLink>
+        </div>
+      </ClinicalPanel>
     </PageContainer>
   );
 }

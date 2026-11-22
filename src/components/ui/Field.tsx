@@ -4,141 +4,137 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
+import { Icon } from "./Icon";
 
 export interface FormFieldProps {
   id: string;
   label: string;
-  optional?: boolean;
-  required?: boolean;
   hint?: string;
   error?: string;
+  required?: boolean;
+  optional?: boolean;
   children: ReactNode;
   className?: string;
 }
 
-export function getFieldDescribedBy(
-  id: string,
-  hint?: string,
-  error?: string,
-): string | undefined {
-  const ids: string[] = [];
-  if (hint) ids.push(`${id}-hint`);
-  if (error) ids.push(`${id}-error`);
-  return ids.length > 0 ? ids.join(" ") : undefined;
-}
-
+/**
+ * Accessible form field wrapper following HTML section 07 rules:
+ * label -> explicit "Required" or "Optional" in plain words -> hint ABOVE input -> control -> error with icon.
+ */
 export function FormField({
   id,
   label,
-  optional = false,
-  required = false,
   hint,
   error,
+  required = false,
+  optional = false,
   children,
   className = "",
 }: FormFieldProps) {
+  const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+
   return (
-    <div className={`grid gap-1.5 min-w-0 ${className}`.trim()}>
-      <label
-        htmlFor={id}
-        className="text-[12px] font-semibold text-[var(--mf-ink-secondary)]"
-      >
+    <div className={`mf-field ${className}`.trim()}>
+      <label htmlFor={id} className="mf-label">
         {label}
-        {optional && (
-          <span className="ml-1 font-normal text-[var(--mf-muted)]">
-            (optional)
-          </span>
-        )}
-        {required && (
-          <span className="ml-1 text-[var(--mf-danger)]" aria-hidden="true">
-            *
-          </span>
-        )}
+        {required ? (
+          <span className="mf-label__req">Required</span>
+        ) : optional ? (
+          <span className="mf-label__req">Optional</span>
+        ) : null}
       </label>
-      {children}
-      {hint && (
-        <p id={`${id}-hint`} className="m-0 text-[12px] text-[var(--mf-muted)]">
+
+      {hint ? (
+        <span id={hintId} className="mf-hint">
           {hint}
-        </p>
-      )}
-      {error && (
-        <p
-          id={`${id}-error`}
-          role="alert"
-          className="m-0 text-[12px] font-medium text-[var(--mf-danger)]"
-        >
-          {error}
-        </p>
-      )}
+        </span>
+      ) : null}
+
+      {children}
+
+      {error ? (
+        <span id={errorId} role="alert" className="mf-error">
+          <Icon name="circleAlert" size="sm" />
+          <span>
+            <span className="mf-sr-only">Error: </span>
+            {error}
+          </span>
+        </span>
+      ) : null}
     </div>
   );
 }
 
-const CONTROL_BASE =
-  "w-full rounded-[8px] border bg-[var(--mf-surface)] px-3 py-2.5 text-[14px] text-[var(--mf-ink)] placeholder:text-[#8e9a94] transition duration-150 focus:outline-none focus:border-[var(--mf-brand)] mf-focus-ring disabled:bg-[var(--mf-surface-inset)] disabled:cursor-not-allowed";
-
-function borderClass(hasError?: boolean): string {
-  return hasError
-    ? "border-[var(--mf-danger)]"
-    : "border-[var(--mf-line-strong)]";
-}
+export type FieldControlSize = "md" | "lg";
 
 export interface TextInputProps extends InputHTMLAttributes<HTMLInputElement> {
-  hasError?: boolean;
+  invalid?: boolean;
+  fieldSize?: FieldControlSize;
 }
 
 export function TextInput({
-  hasError = false,
+  invalid = false,
+  fieldSize = "md",
   className = "",
-  ...rest
+  ...props
 }: TextInputProps) {
   return (
     <input
-      aria-invalid={hasError || undefined}
-      className={`${CONTROL_BASE} min-h-[42px] ${borderClass(hasError)} ${className}`.trim()}
-      {...rest}
+      aria-invalid={invalid || undefined}
+      className={`mf-input ${fieldSize === "lg" ? "mf-input--lg" : ""} ${className}`.trim()}
+      {...props}
     />
   );
 }
 
 export interface TextareaProps
   extends TextareaHTMLAttributes<HTMLTextAreaElement> {
-  hasError?: boolean;
+  invalid?: boolean;
+  fieldSize?: FieldControlSize;
 }
 
 export function Textarea({
-  hasError = false,
+  invalid = false,
+  fieldSize = "md",
   className = "",
-  rows = 4,
-  ...rest
+  ...props
 }: TextareaProps) {
   return (
     <textarea
-      rows={rows}
-      aria-invalid={hasError || undefined}
-      className={`${CONTROL_BASE} min-h-[108px] resize-y leading-relaxed ${borderClass(hasError)} ${className}`.trim()}
-      {...rest}
+      aria-invalid={invalid || undefined}
+      className={`mf-textarea ${fieldSize === "lg" ? "mf-textarea--lg" : ""} ${className}`.trim()}
+      {...props}
     />
   );
 }
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  hasError?: boolean;
+  invalid?: boolean;
+  fieldSize?: FieldControlSize;
 }
 
 export function Select({
-  hasError = false,
+  invalid = false,
+  fieldSize = "md",
   className = "",
-  children,
-  ...rest
+  ...props
 }: SelectProps) {
   return (
     <select
-      aria-invalid={hasError || undefined}
-      className={`${CONTROL_BASE} min-h-[42px] ${borderClass(hasError)} ${className}`.trim()}
-      {...rest}
-    >
-      {children}
-    </select>
+      aria-invalid={invalid || undefined}
+      className={`mf-select ${fieldSize === "lg" ? "mf-select--lg" : ""} ${className}`.trim()}
+      {...props}
+    />
   );
+}
+
+export function getFieldDescribedBy(
+  id: string,
+  opts: { hasHint?: boolean; hasError?: boolean },
+): string | undefined {
+  const ids: string[] = [];
+  if (opts.hasHint) ids.push(`${id}-hint`);
+  if (opts.hasError) ids.push(`${id}-error`);
+  return ids.length > 0 ? ids.join(" ") : undefined;
 }

@@ -1,75 +1,109 @@
-import Link, { type LinkProps } from "next/link";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import Link from "next/link";
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  ReactNode,
+} from "react";
+import { Icon } from "./Icon";
 
-export type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "tertiary"
+  | "quiet"
+  | "destructive"
+  | "danger";
+
 export type ButtonSize = "sm" | "md" | "lg";
 
-const BASE_CLASSES =
-  "inline-flex items-center justify-center gap-2 rounded-[9px] border font-semibold leading-tight transition duration-150 ease-out cursor-pointer select-none focus-visible:outline-none mf-focus-ring disabled:opacity-45 disabled:cursor-not-allowed disabled:transform-none";
-
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:
-    "border-[var(--mf-brand)] bg-[var(--mf-brand)] text-white hover:bg-[var(--mf-brand-strong)] hover:border-[var(--mf-brand-strong)] hover:-translate-y-px active:translate-y-0",
-  secondary:
-    "border-[var(--mf-line-strong)] bg-[var(--mf-surface)] text-[var(--mf-ink-secondary)] hover:bg-[var(--mf-surface-soft)] hover:border-[#aebdb2] hover:-translate-y-px active:translate-y-0",
-  quiet:
-    "border-transparent bg-transparent text-[var(--mf-brand)] hover:bg-[var(--mf-brand-tint)]",
-  danger:
-    "border-[#efd1cc] bg-[var(--mf-danger-soft)] text-[var(--mf-danger)] hover:bg-[#f3dcd8]",
+  primary: "mf-btn--primary",
+  secondary: "mf-btn--secondary",
+  tertiary: "mf-btn--tertiary",
+  quiet: "mf-btn--tertiary",
+  destructive: "mf-btn--destructive",
+  danger: "mf-btn--destructive",
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "min-h-[34px] px-3 py-1.5 text-[12px]",
-  md: "min-h-[40px] px-4 py-2 text-[13px]",
-  lg: "min-h-[46px] px-5 py-3 text-[14px]",
+  sm: "mf-btn--sm",
+  md: "",
+  lg: "mf-btn--lg",
 };
+
+function getButtonClasses(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  fullWidth: boolean,
+  className: string,
+): string {
+  return [
+    "mf-btn",
+    VARIANT_CLASSES[variant],
+    SIZE_CLASSES[size],
+    fullWidth ? "mf-btn--block" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  loading?: boolean;
+  children: ReactNode;
 }
 
 export function Button({
   variant = "primary",
   size = "md",
   fullWidth = false,
+  loading = false,
   type = "button",
   className = "",
+  disabled,
   children,
-  ...rest
+  ...props
 }: ButtonProps) {
   return (
     <button
       type={type}
-      className={`${BASE_CLASSES} ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`.trim()}
-      {...rest}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={getButtonClasses(variant, size, fullWidth, className)}
+      {...props}
     >
+      {loading ? <Icon name="loader" size="btn" spin /> : null}
       {children}
     </button>
   );
 }
 
-export interface ButtonLinkProps extends LinkProps {
+export interface ButtonLinkProps
+  extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
+  href: string;
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
-  className?: string;
   children: ReactNode;
 }
 
 export function ButtonLink({
+  href,
   variant = "primary",
   size = "md",
   fullWidth = false,
   className = "",
   children,
-  ...rest
+  ...props
 }: ButtonLinkProps) {
   return (
     <Link
-      className={`${BASE_CLASSES} ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`.trim()}
-      {...rest}
+      href={href}
+      className={getButtonClasses(variant, size, fullWidth, className)}
+      {...props}
     >
       {children}
     </Link>

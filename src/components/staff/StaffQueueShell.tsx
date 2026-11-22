@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { PageContainer } from "@/components/layout/PageContainer";
 import { FirebaseErrorBoundary } from "@/components/shared/FirebaseErrorBoundary";
 import {
   StaffAccessGate,
@@ -13,8 +13,8 @@ import {
   Badge,
   Button,
   ButtonLink,
-  Card,
-  CardBody,
+  ClinicalPanel,
+  ConnectionChip,
   Icon,
   PriorityLabel,
   Select,
@@ -112,120 +112,172 @@ function AuthorizedStaffQueue({
     };
   }, [activeFacilityId]);
 
+  const unassignedCount = rows.filter(
+    (r) => r.staffAssignedPriority === "unassigned",
+  ).length;
+
   return (
-    <PageContainer width="wide">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-extrabold tracking-[0.14em] text-[var(--mf-brand)] uppercase">
-            <span
-              className="h-px w-6 bg-[var(--mf-brand)]"
-              aria-hidden="true"
-            />
-            Facility-scoped staff workspace
-          </div>
-          <h1 className="mf-display mt-0 mb-1.5 text-[34px] leading-[1.08] font-normal tracking-[-0.03em] text-[var(--mf-ink)]">
-            Clinical intake queue.
-          </h1>
-          <p className="m-0 text-[14px] text-[var(--mf-muted)]">
-            Signed in as <strong>{staffProfile.displayName}</strong> (
-            <span className="capitalize">{staffProfile.role}</span>) · Facility{" "}
-            <code className="mf-mono text-[12px] text-[var(--mf-ink)]">
-              {activeFacilityId}
-            </code>
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {staffProfile.facilityIds.length > 1 && (
-            <div className="w-[220px]">
-              <Select
-                aria-label="Active facility"
-                value={activeFacilityId}
-                onChange={(e) => setActiveFacilityId(e.target.value)}
-              >
-                {staffProfile.facilityIds.map((fid) => (
-                  <option key={fid} value={fid}>
-                    {fid}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          <Badge tone="success" dot>
-            {listenerReady ? "Live facility listener" : "Connecting queue"}
-          </Badge>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void signOutStaff()}
+    <div className="mf-dash-wrap">
+      <div className="mf-dash">
+        <aside className="mf-dash__nav" aria-label="Staff workspace navigation">
+          <div className="mf-nav__label">Workspace</div>
+          <Link
+            href="/staff/queue"
+            aria-current="page"
+            className="mf-nav__item"
           >
-            Sign out
-          </Button>
-        </div>
-      </div>
+            <Icon name="list" size="md" />
+            <span>Patient queue</span>
+            <span className="mf-nav__count">{rows.length}</span>
+          </Link>
+          <Link href="/" className="mf-nav__item">
+            <Icon name="clipboard" size="md" />
+            <span>Overview</span>
+          </Link>
 
-      <Card>
-        <CardBody className="grid gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--mf-line)] pb-3">
-            <div>
-              <h2 className="m-0 text-[15px] font-bold text-[var(--mf-ink)]">
-                Active submissions ({rows.length})
-              </h2>
-              <p className="m-0 text-[12px] text-[var(--mf-muted)]">
-                Ordered deterministically: unassigned intakes first, then
-                staff-assigned workflow priority, oldest first.
+          <div className="mf-nav__foot grid gap-1.5">
+            <div className="font-semibold text-white">
+              {staffProfile.displayName}
+            </div>
+            <div className="capitalize">{staffProfile.role}</div>
+            <div className="mf-mono text-[11px]">{activeFacilityId}</div>
+          </div>
+        </aside>
+
+        <main className="mf-dash__detail">
+          <div className="mf-detail-head justify-between">
+            <div className="grid gap-1">
+              <span className="mf-eyebrow">Facility-scoped staff workspace</span>
+              <h1 className="mf-t-page m-0 text-[var(--mf-text)]">
+                Clinical intake queue
+              </h1>
+              <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
+                Signed in as <strong>{staffProfile.displayName}</strong> (
+                <span className="capitalize">{staffProfile.role}</span>) ·
+                Facility{" "}
+                <code className="mf-mono text-[13px] text-[var(--mf-text)]">
+                  {activeFacilityId}
+                </code>
               </p>
             </div>
-            <Badge tone="brand">Staff-controlled priority</Badge>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {staffProfile.facilityIds.length > 1 && (
+                <div className="w-[220px]">
+                  <Select
+                    aria-label="Active facility"
+                    value={activeFacilityId}
+                    onChange={(e) => setActiveFacilityId(e.target.value)}
+                  >
+                    {staffProfile.facilityIds.map((fid) => (
+                      <option key={fid} value={fid}>
+                        {fid}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+              <ConnectionChip
+                state={listenerReady ? "connected" : "updating"}
+                label={listenerReady ? "Live facility listener" : "Connecting queue"}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void signOutStaff()}
+              >
+                Sign out
+              </Button>
+            </div>
           </div>
 
-          {!listenerReady ? (
-            <p className="m-0 py-6 text-center text-[13px] text-[var(--mf-muted)]">
-              Connecting to facility-scoped Firestore queue...
-            </p>
-          ) : rows.length === 0 ? (
-            <Alert tone="info" title="No intake records in this facility yet">
-              Your authenticated facility-scoped Firestore query succeeded with
-              zero records. Synthetic patient intake submission and staff-side
-              AI extraction workflows are scheduled for Milestone 2 after
-              Milestone 1B approval.
-            </Alert>
-          ) : (
-            <ul className="m-0 grid list-none gap-2.5 p-0">
-              {rows.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[var(--mf-line)] bg-[var(--mf-surface-soft)] px-4 py-3"
-                >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="mf-mono text-[13px] font-semibold text-[var(--mf-ink)]">
-                      {row.referenceCode}
-                    </span>
-                    {row.patientDisplayName && (
-                      <span className="text-[13px] text-[var(--mf-muted)]">
-                        {row.patientDisplayName}
-                      </span>
-                    )}
-                    <PriorityLabel priority={row.staffAssignedPriority} />
-                    <Badge tone="neutral">
-                      {WORKFLOW_STATUS_LABELS[row.workflowStatus]}
-                    </Badge>
+          <ClinicalPanel
+            source="nurse"
+            sourceLabel="Staff-controlled priority"
+            title={`Active submissions (${rows.length})`}
+            subtitle="Ordered deterministically: unassigned intakes first, then staff-assigned workflow priority, oldest first."
+            action={
+              unassignedCount > 0 ? (
+                <Badge tone="warning" icon="clock">
+                  {unassignedCount} unassigned
+                </Badge>
+              ) : null
+            }
+          >
+            {!listenerReady ? (
+              <div className="grid gap-2 py-2" aria-busy="true">
+                <span className="mf-skel h-12 w-full" />
+                <span className="mf-skel h-12 w-full" />
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="grid gap-3">
+                <div className="mf-empty">
+                  <Icon
+                    name="inbox"
+                    size="xl"
+                    className="text-[var(--mf-text-secondary)]"
+                  />
+                  <div className="mf-empty__title">
+                    No intake records in this facility yet
                   </div>
-                  <ButtonLink
-                    href={`/staff/intakes/${encodeURIComponent(row.id)}`}
-                    variant="secondary"
-                    size="sm"
-                  >
-                    Inspect record
-                    <Icon name="arrow" size="sm" />
-                  </ButtonLink>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardBody>
-      </Card>
-    </PageContainer>
+                  <p className="mf-t-body-sm m-0 max-w-[46ch]">
+                    Your authenticated facility-scoped Firestore query succeeded
+                    with zero records.
+                  </p>
+                </div>
+                <Alert tone="info" title="Milestone 2 intake pipeline pending">
+                  Synthetic patient intake submission and staff-side AI
+                  extraction workflows activate in Milestone 2 after approval.
+                  Workflow priority remains exclusively staff-controlled.
+                </Alert>
+              </div>
+            ) : (
+              <div className="-mx-4 -mb-4">
+                <div className="mf-queue__band">
+                  <span>Facility queue · {activeFacilityId}</span>
+                  <span className="mf-mono">{rows.length} records</span>
+                </div>
+                <ul className="mf-queue m-0 list-none p-0">
+                  {rows.map((row) => (
+                    <li
+                      key={row.id}
+                      className="mf-qitem"
+                      data-priority={row.staffAssignedPriority}
+                    >
+                      <div className="mf-qitem__link">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="mf-t-data text-[var(--mf-text)]">
+                            {row.referenceCode}
+                          </span>
+                          {row.patientDisplayName ? (
+                            <span className="font-medium text-[var(--mf-text-secondary)]">
+                              {row.patientDisplayName}
+                            </span>
+                          ) : null}
+                          <PriorityLabel priority={row.staffAssignedPriority} />
+                          <Badge tone="neutral">
+                            {WORKFLOW_STATUS_LABELS[row.workflowStatus]}
+                          </Badge>
+                        </div>
+
+                        <ButtonLink
+                          href={`/staff/intakes/${encodeURIComponent(row.id)}`}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          Inspect record
+                          <Icon name="arrow" size="sm" />
+                        </ButtonLink>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </ClinicalPanel>
+        </main>
+      </div>
+    </div>
   );
 }
 

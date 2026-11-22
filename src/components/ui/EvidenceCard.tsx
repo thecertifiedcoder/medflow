@@ -1,75 +1,80 @@
 import type { Certainty } from "@/lib/schemas/intake";
-import { Badge } from "./Badge";
+import { Badge, SourceTag } from "./Badge";
 
 export interface EvidenceCardProps {
+  label: string;
   value: string;
-  certainty: Certainty;
   sourceQuote?: string;
+  certainty: Certainty;
   duration?: string | null;
   severity?: string | null;
-  provenanceLabel?: string;
   className?: string;
 }
 
+/**
+ * Displays an AI-extracted intake fact alongside its provenance boundary and verbatim patient quote.
+ * Dashed purple AI styling signals unverified machine output; solid patient quote block anchors evidence.
+ */
 export function EvidenceCard({
+  label,
   value,
-  certainty,
   sourceQuote,
+  certainty,
   duration,
   severity,
-  provenanceLabel = "Extracted from confirmed patient narrative · AI-generated draft",
   className = "",
 }: EvidenceCardProps) {
-  const isExplicit = certainty === "explicit";
-
   return (
     <article
-      className={`rounded-[11px] border border-[var(--mf-line)] bg-[var(--mf-surface)] p-3.5 ${className}`.trim()}
+      className={`mf-panel ${className}`.trim()}
+      data-source="ai"
     >
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="m-0 text-[13px] font-bold text-[var(--mf-ink)]">
-          {value}
-        </h4>
-        <Badge tone={isExplicit ? "success" : "warning"}>
-          {isExplicit ? "Explicitly reported" : "Unclear / needs clarification"}
-        </Badge>
+      <div className="mf-panel__head">
+        <span className="mf-eyebrow">{label}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <SourceTag source="ai" label="AI Draft" />
+          <Badge tone={certainty === "explicit" ? "brand" : "caution"}>
+            {certainty === "explicit" ? "Explicitly stated" : "Unclear / needs review"}
+          </Badge>
+        </div>
       </div>
 
-      {sourceQuote ? (
-        <blockquote className="m-0 rounded-r-[7px] border-l-2 border-[#84aa99] bg-[var(--mf-surface-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--mf-ink-secondary)]">
-          “{sourceQuote}”
-        </blockquote>
-      ) : (
-        <p className="m-0 rounded-[7px] bg-[var(--mf-warning-soft)] px-3 py-2 text-[12px] text-[var(--mf-warning-ink)]">
-          No exact supporting quote identified — verify directly against the
-          patient&apos;s statement.
-        </p>
-      )}
+      <div className="mf-panel__body">
+        <p className="mf-t-card m-0 text-[var(--mf-text)]">{value}</p>
 
-      {(duration !== undefined || severity !== undefined) && (
-        <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-[var(--mf-muted)]">
-          {duration !== undefined && (
-            <div className="flex gap-1">
-              <dt className="font-semibold text-[var(--mf-ink-secondary)]">
-                Duration:
-              </dt>
-              <dd className="m-0">{duration ?? "Not stated"}</dd>
-            </div>
-          )}
-          {severity !== undefined && (
-            <div className="flex gap-1">
-              <dt className="font-semibold text-[var(--mf-ink-secondary)]">
-                Severity:
-              </dt>
-              <dd className="m-0">{severity ?? "Not stated"}</dd>
-            </div>
-          )}
-        </dl>
-      )}
+        {(duration || severity) && (
+          <dl className="mf-dl m-0">
+            {duration ? (
+              <>
+                <dt>Duration</dt>
+                <dd>{duration}</dd>
+              </>
+            ) : null}
+            {severity ? (
+              <>
+                <dt>Severity</dt>
+                <dd>{severity}</dd>
+              </>
+            ) : null}
+          </dl>
+        )}
 
-      <p className="m-0 mt-2.5 text-[11px] text-[var(--mf-muted)]">
-        {provenanceLabel}
-      </p>
+        {sourceQuote ? (
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <SourceTag source="patient" label="Verbatim patient quote" />
+            </div>
+            <blockquote className="mf-quote !text-[var(--mf-fs-body-sm)]">
+              &ldquo;{sourceQuote}&rdquo;
+            </blockquote>
+          </div>
+        ) : (
+          <div className="rounded-[4px] border border-dashed border-[var(--mf-caution)] bg-[var(--mf-caution-tint)] px-3 py-2 text-[13px] text-[var(--mf-caution)]">
+            No exact verbatim source quote matched — verify directly against the
+            patient&apos;s original narrative.
+          </div>
+        )}
+      </div>
     </article>
   );
 }
