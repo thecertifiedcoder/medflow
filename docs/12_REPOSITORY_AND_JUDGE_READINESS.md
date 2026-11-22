@@ -100,7 +100,7 @@ Disclose tools actually used. Example format (edit to match reality):
 
 | Tool | Use |
 |---|---|
-| Claude | Product brainstorming, documentation, architecture review and design-system planning |
+| Claude | Product brainstorming, documentation, architecture review and review of the founder-provided HTML design reference |
 | Google AI Studio / Gemini | Application code generation, debugging and Gemini API integration |
 | Other tools | List only if actually used and explain the contribution |
 
