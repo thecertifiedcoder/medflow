@@ -288,10 +288,11 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <Alert tone="ai" title="AI boundary enforced in schema and rules">
-                Extraction schemas strictly reject diagnosis, urgency score,
-                treatment, or priority fields. If AI fails, the patient&apos;s
-                submission still stays visible in the facility queue.
+              <Alert tone="ai" title="AI boundary enforced in schemas and database constraints">
+                Extraction schemas and PostgreSQL constraints strictly reject
+                diagnosis, urgency score, treatment, or priority fields. If AI
+                fails, the patient&apos;s submission still stays visible in the
+                facility queue.
               </Alert>
             </ClinicalPanel>
 
@@ -350,7 +351,7 @@ export default function HomePage() {
             >
               <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
                 Google Sign-In paired with server-side Firebase ID token
-                verification and Firestore facility membership enforcement.
+                verification and PostgreSQL facility membership enforcement.
               </p>
               <div className="pt-2">
                 <ButtonLink href="/staff/login" variant="secondary" size="sm">
@@ -370,7 +371,7 @@ export default function HomePage() {
             >
               <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
                 Protected facility-scoped intake queue with deterministic
-                ordering and Firestore Security Rules isolation.
+                ordering and server-authorized PostgreSQL isolation.
               </p>
               <div className="pt-2">
                 <ButtonLink href="/staff/queue" variant="secondary" size="sm">

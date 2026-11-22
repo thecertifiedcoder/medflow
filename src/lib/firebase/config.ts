@@ -5,32 +5,32 @@ export interface FirebaseAppletConfig {
   readonly appId: string;
   readonly apiKey: string;
   readonly authDomain: string;
-  readonly firestoreDatabaseId: string;
   readonly storageBucket: string;
   readonly messagingSenderId: string;
+  readonly firestoreDatabaseId?: string;
   readonly measurementId?: string;
   readonly oAuthClientId?: string;
   readonly recaptchaSiteKey?: string;
 }
 
-const REMIX_PLACEHOLDERS = new Set([
-  "remixed-project-id",
-  "remixed-firestore-database-id",
-]);
+const REMIX_PLACEHOLDERS = new Set(["remixed-project-id"]);
 
-function validateFirebaseConfig(config: FirebaseAppletConfig): FirebaseAppletConfig {
+function validateFirebaseAuthConfig(
+  config: FirebaseAppletConfig,
+): FirebaseAppletConfig {
   if (
     !config.projectId ||
-    !config.firestoreDatabaseId ||
-    REMIX_PLACEHOLDERS.has(config.projectId) ||
-    REMIX_PLACEHOLDERS.has(config.firestoreDatabaseId)
+    !config.apiKey ||
+    !config.authDomain ||
+    !config.appId ||
+    REMIX_PLACEHOLDERS.has(config.projectId)
   ) {
     throw new Error(
-      "Firebase applet configuration is missing or still contains placeholder values.",
+      "Firebase Authentication configuration is missing or still contains placeholder values.",
     );
   }
   return config;
 }
 
 export const firebaseAppletConfig: FirebaseAppletConfig =
-  validateFirebaseConfig(rawFirebaseConfig as FirebaseAppletConfig);
+  validateFirebaseAuthConfig(rawFirebaseConfig as FirebaseAppletConfig);

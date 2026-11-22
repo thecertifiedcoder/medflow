@@ -12,8 +12,10 @@ export interface ServerConfig {
 }
 
 const DEFAULT_DEMO_FACILITY_ID = "demo-clinic-01";
+const RETIRED_DEMO_FACILITY_ID = "demo-facility-001";
 const DEFAULT_DEMO_FACILITY_NAME = "MedFlow Synthetic Demo Clinic";
 const DEFAULT_DEMO_FACILITY_PUBLIC_CODE = "DEMO-CLINIC-01";
+const RETIRED_DEMO_FACILITY_PUBLIC_CODE = "DEMO-FACILITY";
 const DEFAULT_EXTRACTION_MODEL = "gemini-4-hydrogen";
 const DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe";
 const DEFAULT_MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -88,13 +90,25 @@ export function getServerConfig(
   const databaseUrl = env.DATABASE_URL?.trim();
   const databaseUrlUnpooled = env.DATABASE_URL_UNPOOLED?.trim();
 
+  const rawFacilityId = env.DEMO_FACILITY_ID?.trim();
+  const normalizedFacilityId =
+    !rawFacilityId ||
+    rawFacilityId.toLowerCase() === RETIRED_DEMO_FACILITY_ID
+      ? DEFAULT_DEMO_FACILITY_ID
+      : rawFacilityId;
+
+  const rawPublicCode = env.NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE?.trim();
+  const normalizedPublicCode =
+    !rawPublicCode ||
+    rawPublicCode.toUpperCase() === RETIRED_DEMO_FACILITY_PUBLIC_CODE
+      ? DEFAULT_DEMO_FACILITY_PUBLIC_CODE
+      : rawPublicCode;
+
   return {
-    demoFacilityId: env.DEMO_FACILITY_ID?.trim() || DEFAULT_DEMO_FACILITY_ID,
+    demoFacilityId: normalizedFacilityId,
     demoFacilityName:
       env.DEMO_FACILITY_NAME?.trim() || DEFAULT_DEMO_FACILITY_NAME,
-    demoFacilityPublicCode:
-      env.NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE?.trim() ||
-      DEFAULT_DEMO_FACILITY_PUBLIC_CODE,
+    demoFacilityPublicCode: normalizedPublicCode,
     geminiExtractionModel:
       env.GEMINI_EXTRACTION_MODEL?.trim() || DEFAULT_EXTRACTION_MODEL,
     geminiTranscribeModel:

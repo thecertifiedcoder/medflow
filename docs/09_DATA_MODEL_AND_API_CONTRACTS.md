@@ -28,8 +28,8 @@ Canonical synthetic demo facility: `id = "demo-clinic-01"`, `public_code = "DEMO
 
 ### 2.2 `staff_profiles` & `facility_memberships`
 
-- `staff_profiles`: `firebase_uid` (`text`, PK), `email` (`text`, `UNIQUE NOT NULL`), `display_name` (`text`, `NOT NULL`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`.
-- `facility_memberships`: `id` (`uuid`, PK), `staff_uid` (`text`, FK -> `staff_profiles.firebase_uid` `ON DELETE RESTRICT`), `facility_id` (`text`, FK -> `facilities.id` `ON DELETE RESTRICT`), `role` (`staff_role`: `'nurse' | 'doctor' | 'admin'`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`, with `UNIQUE (staff_uid, facility_id)`.
+- `staff_profiles`: `uid` (`varchar(128)`, PK — Firebase Auth UID), `email` (`varchar(254)`, `UNIQUE NOT NULL`), `display_name` (`varchar(120)`, `NOT NULL`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`.
+- `facility_memberships`: `id` (`uuid`, PK), `staff_uid` (`varchar(128)`, FK -> `staff_profiles.uid` `ON DELETE RESTRICT`), `facility_id` (`varchar(128)`, FK -> `facilities.id` `ON DELETE RESTRICT`), `role` (`staff_role`: `'nurse' | 'doctor' | 'admin'`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`, with `UNIQUE (staff_uid, facility_id)`.
 
 Never let a public client assign itself a staff profile or facility membership. Provisioning occurs outside public routes (e.g., founder-run CLI `src/db/seed.ts` in Phase 1D-3).
 
@@ -153,11 +153,23 @@ Server must resolve facility code (`DEMO-CLINIC-01` → `demo-clinic-01`), valid
 
 Trigger extraction only through an authenticated, active, facility-authorised staff session (`D-015`). The Gemini call, strict Zod validation, deterministic evidence verification (Milestone 3), and atomic PostgreSQL persistence (`ai_brief`, `ai_brief_provenance`, `intake_evidence`, and `system` `audit_events`) all execute server-side. Retries are staff-authorised, rate-limited, and bounded.
 
-### `GET /api/staff/intakes`
+### `GET /api/staff/session` *(Implemented — Phase 1D-2)*
 
-- Staff authentication required.
-- Facility scope derived from authenticated staff profile/claims, not query-supplied facility ID alone.
-- Return paginated active queue.
+- **Auth:** `Authorization: Bearer <Firebase ID token>` verified server-side (`verifyIdToken` + `email_verified === true`).
+- **Query params:** optional `facilityId` (`^[a-zA-Z0-9_-]+$`); invalid format returns `400 INVALID_FACILITY_ID`.
+- **Behavior:** Resolves `staff_profiles` and active `facility_memberships` joined to active `facilities` strictly from Neon PostgreSQL. Returns `Cache-Control: no-store` with `authorizationModel: "neon_postgres_server_rbac"` and discriminated `authorizationStatus: "authorized" | "unprovisioned" | "inactive"`. Returns `503 DATABASE_UNAVAILABLE` if PostgreSQL is unreachable/unconfigured without exposing credentials or SQL.
+
+### `GET /api/staff/intakes` *(Implemented — Phase 1D-2)*
+
+- **Auth & RBAC:** Requires verified Firebase ID token, active PostgreSQL `staff_profiles`, active `facility_memberships` for the target facility, and an authorized clinical role (`nurse`, `doctor`, or `admin`). Cross-facility `facilityId` requests fail with `403 FACILITY_ACCESS_DENIED`.
+- **Query params (strictly validated; unknown keys rejected with `400 INVALID_QUERY_PARAMS`):** `facilityId` (optional; defaults to primary authorized membership), `workflowStatus` (`new | in_review | awaiting_clarification | completed`), `priority` (`unassigned | immediate_review | priority_review | routine_review`), `includeCompleted` (`"true" | "false"`, default `false`), `limit` (`1..100`, default `50`), `offset` (`0..10000`, default `0`).
+- **Ordering & projection:** Deterministic SQL order (`unassigned` → `immediate_review` → `priority_review` → `routine_review`, then `created_at ASC`, then `id ASC`). Returns bounded queue summaries (`items`, `pagination`, `counts`, `fetchedAt`) with `Cache-Control: no-store` and intentionally excludes `confirmedNarrative`, `transcriptRaw`, `aiBrief`, and `staffReviewedBrief`. Polled by the staff UI every 5 seconds while the browser tab is visible (`document.visibilityState !== "hidden"`).
+
+### `GET /api/staff/intakes/{id}` *(Implemented — Phase 1D-2)*
+
+- **Auth & RBAC:** Requires verified Firebase ID token, active PostgreSQL staff membership for the verified facility, and valid UUID path parameter (`400 INVALID_INTAKE_ID` on malformed IDs before DB access).
+- **Cross-facility non-disclosure:** Queries `patient_intakes`, current `intake_evidence` (`is_current = true`), and chronological `audit_events` filtered strictly by `(intake_id, verified_facility_id)`. Missing records and records belonging to other facilities return an identical safe `404 INTAKE_NOT_FOUND` with no existence oracle.
+- **Response (`Cache-Control: no-store`):** Separates `patientSource` (immutable `confirmedNarrative`, `transcriptRaw`, `confirmedNarrativeSha256`), `aiDraft` (non-authoritative `aiBrief`, provenance, status), `evidence` (`intake_evidence` spans/statuses), `staffReview` (separate `staffReviewedBrief`, correction note, reviewer metadata), `workflow`, and append-only `auditEvents`.
 
 ### `POST /api/staff/intakes/{id}/review`
 

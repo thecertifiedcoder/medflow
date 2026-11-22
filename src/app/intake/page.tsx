@@ -44,8 +44,8 @@ export default function PatientIntakePage() {
         <Alert tone="info" title="No simulated submissions are shown here">
           This mobile-first patient intake route is styled with 18px body text
           and 56px touch targets. Typed entry, optional name or alias, optional
-          age, browser voice recording, transcript review, and durable Firestore
-          submission will be enabled once Milestone 2 is authorised.
+          age, browser voice recording, transcript review, and durable
+          PostgreSQL submission will be enabled once Milestone 2 is authorised.
         </Alert>
 
         <dl className="mf-dl m-0">

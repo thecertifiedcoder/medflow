@@ -149,16 +149,16 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
   7. Defer `EVIDENCE_HMAC_SECRET` until Milestone 3.
   8. No live Neon database operations in Phase 1D-1; keep existing Firebase Auth and legacy Firestore files untouched until Phases 1D-2/1D-3.
 
-#### Phase 1D-2 — PostgreSQL Data-Access Layer, API Routes & UI Cutover (requires separate approval)
-- Implement server-only PostgreSQL repository/service layer (`src/lib/db/*`) with transactional intake creation, staff authorization (`verifyIdToken` + PostgreSQL `staff_profiles`/`facility_memberships`), queue queries, and atomic audited mutations.
-- Migrate `/api/staff/session` and implement PostgreSQL-backed Route Handlers (`/api/staff/intakes`, etc.).
-- Replace client-side Firestore `onSnapshot` listeners with visibility-aware polling of authenticated Route Handlers.
-- Keep Firebase Authentication and its `/__/auth/*` proxy completely intact.
+#### Phase 1D-2 — Server-Side PostgreSQL Staff APIs & Staff UI Cutover (implemented & verified)
+- Implemented server-only PostgreSQL staff repository (`src/lib/db/staff-repository.ts`, `src/lib/db/errors.ts`), reusable Firebase ID-token + PostgreSQL RBAC/facility-membership authorization boundary (`src/lib/auth/staff-authorization.ts`), and strict staff API contracts (`src/lib/schemas/staff-api.ts`).
+- Migrated `GET /api/staff/session` and implemented `GET /api/staff/intakes` and `GET /api/staff/intakes/[intakeId]` via `src/lib/api/staff-handlers.ts`.
+- Cut over active staff UI components (`StaffAuthProvider`, `StaffAccessGate`, `StaffLoginPanel`, `StaffQueueShell`, `StaffIntakeDetailShell`) from Firestore reads to authenticated same-origin APIs with 5-second visibility-aware polling (`src/lib/staff/polling.ts`, `src/lib/staff/api-client.ts`).
 
-#### Phase 1D-3 — Live Neon Migration, Seeding, Verification & Legacy Firestore Cleanup (requires Neon credentials & separate approval)
-- Once the founder provisions Neon and supplies `DATABASE_URL` and `DATABASE_URL_UNPOOLED` as server-only secrets, run `drizzle-kit migrate` and idempotent `src/db/seed.ts`.
-- Execute live PostgreSQL constraint/trigger negative tests and interactive desktop/mobile browser verification (Google Sign-In → authorized queue).
-- Remove legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/firestore.ts`, Firestore security-rules tests/dependencies) while preserving Firebase Auth.
+#### Phase 1D-3 — Live Neon Migration, Seeding, Verification & Legacy Firestore Cleanup (implemented & live-verified)
+- Added `src/db/migrate.ts` (`npm run db:migrate`) and `src/db/live-verification.test.ts`; applied `drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql` against live Neon PostgreSQL via `DATABASE_URL_UNPOOLED`.
+- Executed idempotent `src/db/seed.ts` (`npm run db:seed`) twice against live Neon PostgreSQL, seeding canonical `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`). (Initial staff admin seeding remains gated on founder-supplied `SEED_ADMIN_*` environment variables per Option 2B.)
+- Executed live PostgreSQL schema, trigger, and negative constraint verification (PG-01 through PG-06 inside a rolled-back transaction) plus live pooled `DATABASE_URL` Drizzle reads via `createDrizzleStaffRepository()`.
+- Removed all legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), removed `@firebase/eslint-plugin-security-rules`, and refactored `src/lib/firebase/client.ts` & `config.ts` to Firebase Authentication only while keeping Google Sign-In and the same-origin `/__/auth/*` proxy intact.
 
 ### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval)
 

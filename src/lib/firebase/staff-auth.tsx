@@ -17,12 +17,10 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
 import {
   AUTH_INIT_TIMEOUT_MS,
   classifyRedirectResultError,
   classifySignInError,
-  deriveProfileAuthorizationStatus,
   extractFirebaseAuthErrorCode,
   isEmbeddedInIframe,
   isMobileUserAgent,
@@ -36,24 +34,19 @@ import {
 } from "@/lib/firebase/auth-state";
 import {
   auth,
-  db,
   effectiveAuthDomain,
   googleProvider,
-  testFirestoreConnection,
   usesSameOriginAuthProxy,
 } from "@/lib/firebase/client";
+import type {
+  AuthorizedFacilityMembership,
+  PostgresStaffSessionResponse,
+  ResolvedStaffProfile,
+} from "@/lib/schemas/staff-api";
 import {
-  handleFirestoreError,
-  isOfflineError,
-  isPermissionDeniedError,
-  OperationType,
-} from "@/lib/firebase/errors";
-import {
-  StaffProfileSchema,
-  StaffSessionResponseSchema,
-  type StaffProfile,
-  type StaffSessionResponse,
-} from "@/lib/schemas/staff";
+  fetchStaffSession,
+  StaffApiClientError,
+} from "@/lib/staff/api-client";
 
 export type {
   AuthDiagnostics,
@@ -70,10 +63,10 @@ export interface StaffAuthState {
     readonly emailVerified: boolean;
     readonly displayName: string | null;
   } | null;
-  readonly serverSession: StaffSessionResponse | null;
-  readonly staffProfile: StaffProfile | null;
+  readonly serverSession: PostgresStaffSessionResponse | null;
+  readonly staffProfile: ResolvedStaffProfile | null;
+  readonly activeFacility: AuthorizedFacilityMembership | null;
   readonly activeFacilityId: string | null;
-  readonly connectionReachable: boolean | null;
   readonly errorMessage: string | null;
   readonly authNotice: string | null;
   readonly authDiagnostics: AuthDiagnostics;
@@ -81,6 +74,8 @@ export interface StaffAuthState {
   readonly canUseRedirectFallback: boolean;
   readonly suggestOpenInStandaloneTab: boolean;
   readonly isSigningIn: boolean;
+  readonly getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
+  readonly handleSessionExpired: (message?: string) => void;
   readonly signInWithGoogle: () => Promise<void>;
   readonly signInWithGooglePopup: () => Promise<void>;
   readonly signInWithGoogleRedirect: () => Promise<void>;
@@ -132,14 +127,12 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StaffAuthStatus>("initializing");
   const [rawUser, setRawUser] = useState<User | null>(null);
   const [serverSession, setServerSession] =
-    useState<StaffSessionResponse | null>(null);
-  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
-  const [activeFacilityId, setActiveFacilityIdState] = useState<string | null>(
+    useState<PostgresStaffSessionResponse | null>(null);
+  const [staffProfile, setStaffProfile] = useState<ResolvedStaffProfile | null>(
     null,
   );
-  const [connectionReachable, setConnectionReachable] = useState<
-    boolean | null
-  >(null);
+  const [activeFacility, setActiveFacility] =
+    useState<AuthorizedFacilityMembership | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [canUseRedirectFallback, setCanUseRedirectFallback] = useState(false);
@@ -153,6 +146,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const verificationRunIdRef = useRef(0);
   const verifyingUidRef = useRef<string | null>(null);
   const activeUserUidRef = useRef<string | null>(null);
+  const preferredFacilityIdRef = useRef<string | null>(null);
   const authAttemptInFlightRef = useRef(false);
   const authResolvedRef = useRef(false);
   const statusRef = useRef<StaffAuthStatus>(status);
@@ -161,186 +155,151 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     statusRef.current = status;
   }, [status]);
 
-  const verifyUserAndProfile = useCallback(async (user: User, force = false) => {
-    // Deduplicate concurrent verification triggers from signInWithPopup / getRedirectResult / onAuthStateChanged.
-    if (!force && verifyingUidRef.current === user.uid) {
-      return;
-    }
+  const getIdToken = useCallback(
+    async (forceRefresh = false): Promise<string | null> => {
+      const currentUser = auth.currentUser ?? rawUser;
+      if (!currentUser) return null;
+      try {
+        return await currentUser.getIdToken(forceRefresh);
+      } catch {
+        return null;
+      }
+    },
+    [rawUser],
+  );
 
-    const runId = ++verificationRunIdRef.current;
-    verifyingUidRef.current = user.uid;
-    activeUserUidRef.current = user.uid;
-    authAttemptInFlightRef.current = false;
-    setRawUser(user);
-    setStatus("verifying");
-    setErrorMessage(null);
-    setAuthNotice(null);
-    setCanUseRedirectFallback(false);
-    setSuggestOpenInStandaloneTab(false);
+  const handleSessionExpired = useCallback((message?: string) => {
+    verificationRunIdRef.current += 1;
+    verifyingUidRef.current = null;
     setServerSession(null);
     setStaffProfile(null);
-    setAuthDiagnostics((prev) => ({
-      ...prev,
-      lastErrorCode: null,
-      lastErrorSummary: null,
-      authStateResolved: true,
-    }));
-
-    if (!user.emailVerified) {
-      if (runId !== verificationRunIdRef.current) return;
-      verifyingUidRef.current = null;
-      setStatus("unverified_email");
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutHandle = window.setTimeout(
-      () => controller.abort(),
-      SESSION_VERIFY_TIMEOUT_MS,
+    setActiveFacility(null);
+    setErrorMessage(
+      message ??
+        "Your clinical staff session has expired. Sign in again to continue.",
     );
+    setStatus("unauthenticated");
+  }, []);
 
-    try {
-      const idToken = await user.getIdToken();
-      if (runId !== verificationRunIdRef.current) return;
+  const verifyUserAndProfile = useCallback(
+    async (user: User, force = false) => {
+      // Deduplicate concurrent verification triggers from signInWithPopup / getRedirectResult / onAuthStateChanged.
+      if (!force && verifyingUidRef.current === user.uid) {
+        return;
+      }
 
-      const response = await fetch("/api/staff/session", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-        cache: "no-store",
-        signal: controller.signal,
-      });
+      const runId = ++verificationRunIdRef.current;
+      verifyingUidRef.current = user.uid;
+      activeUserUidRef.current = user.uid;
+      authAttemptInFlightRef.current = false;
+      setRawUser(user);
+      setStatus("verifying");
+      setErrorMessage(null);
+      setAuthNotice(null);
+      setCanUseRedirectFallback(false);
+      setSuggestOpenInStandaloneTab(false);
+      setServerSession(null);
+      setStaffProfile(null);
+      setActiveFacility(null);
+      setAuthDiagnostics((prev) => ({
+        ...prev,
+        lastErrorCode: null,
+        lastErrorSummary: null,
+        authStateResolved: true,
+      }));
 
-      if (runId !== verificationRunIdRef.current) return;
+      if (!user.emailVerified) {
+        if (runId !== verificationRunIdRef.current) return;
+        verifyingUidRef.current = null;
+        setStatus("unverified_email");
+        return;
+      }
 
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: { message?: string; code?: string };
-        } | null;
-        if (
-          response.status === 403 &&
-          body?.error?.code === "EMAIL_NOT_VERIFIED"
-        ) {
-          setStatus("unverified_email");
+      const controller = new AbortController();
+      const timeoutHandle = window.setTimeout(
+        () => controller.abort(),
+        SESSION_VERIFY_TIMEOUT_MS,
+      );
+
+      try {
+        const session = await fetchStaffSession({
+          getIdToken: (forceTokenRefresh) =>
+            user.getIdToken(Boolean(forceTokenRefresh)),
+          facilityId: preferredFacilityIdRef.current,
+          signal: controller.signal,
+        });
+
+        if (runId !== verificationRunIdRef.current) return;
+
+        if (session.user.uid !== user.uid) {
+          setErrorMessage(
+            "Server session UID did not match the signed-in Firebase account.",
+          );
+          setStatus("error");
           return;
         }
-        setErrorMessage(
-          body?.error?.message ??
-            "Server-side Firebase ID token verification did not succeed.",
-        );
-        setStatus("error");
-        return;
-      }
 
-      const parsedSession = StaffSessionResponseSchema.safeParse(
-        await response.json(),
-      );
-      if (runId !== verificationRunIdRef.current) return;
+        setServerSession(session);
 
-      if (!parsedSession.success || parsedSession.data.user.uid !== user.uid) {
-        setErrorMessage("Unexpected server session verification response.");
-        setStatus("error");
-        return;
-      }
+        if (session.authorizationStatus === "unprovisioned") {
+          setStaffProfile(null);
+          setActiveFacility(null);
+          setStatus("unprovisioned");
+          return;
+        }
 
-      setServerSession(parsedSession.data);
+        if (session.authorizationStatus === "inactive") {
+          setStaffProfile(null);
+          setActiveFacility(null);
+          setStatus("inactive");
+          return;
+        }
 
-      // Owner-only Firestore read of /staff/{uid} enforced by firestore.rules.
-      const staffPath = `staff/${user.uid}`;
-      let snapshot;
-      try {
-        snapshot = await getDoc(doc(db, "staff", user.uid));
+        preferredFacilityIdRef.current = session.activeFacility.facilityId;
+        setStaffProfile(session.staffProfile);
+        setActiveFacility(session.activeFacility);
+        setStatus("authorized");
       } catch (err) {
         if (runId !== verificationRunIdRef.current) return;
-        if (isOfflineError(err)) {
-          setConnectionReachable(false);
+
+        if (err instanceof DOMException && err.name === "AbortError") {
           setErrorMessage(
-            "Unable to reach Firestore to verify staff provisioning. Check your connection and retry.",
+            "Session verification timed out before the server responded. Please retry.",
           );
           setStatus("error");
           return;
         }
-        if (isPermissionDeniedError(err)) {
-          try {
-            handleFirestoreError(err, OperationType.GET, staffPath, auth);
-          } catch {
-            // Structured diagnostic logged by handleFirestoreError; surface a clean UI message.
+
+        if (err instanceof StaffApiClientError) {
+          if (err.status === 403 && err.code === "EMAIL_NOT_VERIFIED") {
+            setStatus("unverified_email");
+            return;
           }
-          setErrorMessage(
-            "Firestore denied reading your staff profile record. Confirm your Google email is verified and retry.",
-          );
+          if (err.isAuthExpired) {
+            setErrorMessage(err.message);
+            setStatus("unauthenticated");
+            return;
+          }
+          setErrorMessage(err.message);
           setStatus("error");
           return;
         }
-        throw err;
-      }
 
-      if (runId !== verificationRunIdRef.current) return;
-
-      if (!snapshot.exists()) {
-        setStaffProfile(null);
-        setActiveFacilityIdState(null);
-        setStatus("unprovisioned");
-        return;
-      }
-
-      const parsedProfile = StaffProfileSchema.safeParse(snapshot.data());
-      if (!parsedProfile.success) {
-        setErrorMessage(
-          "Staff profile record exists but does not match the required MedFlow authorization schema.",
-        );
-        setStatus("error");
-        return;
-      }
-
-      const profile = parsedProfile.data;
-      setStaffProfile(profile);
-
-      let nextFacilityId: string | null = null;
-      setActiveFacilityIdState((prev) => {
-        const result = deriveProfileAuthorizationStatus(profile, user.uid, prev);
-        nextFacilityId = result.activeFacilityId;
-        return nextFacilityId;
-      });
-
-      const decision = deriveProfileAuthorizationStatus(
-        profile,
-        user.uid,
-        nextFacilityId,
-      );
-      if (decision.status === "error") {
-        setErrorMessage(decision.errorMessage);
-        setStatus("error");
-        return;
-      }
-      if (decision.status === "inactive") {
-        setStatus("inactive");
-        return;
-      }
-
-      setStatus("authorized");
-    } catch (err) {
-      if (runId !== verificationRunIdRef.current) return;
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setErrorMessage(
-          "Session verification timed out before the server responded. Please retry.",
-        );
-      } else {
         setErrorMessage(
           err instanceof Error
             ? err.message
             : "Unable to verify staff authorization.",
         );
+        setStatus("error");
+      } finally {
+        window.clearTimeout(timeoutHandle);
+        if (runId === verificationRunIdRef.current) {
+          verifyingUidRef.current = null;
+        }
       }
-      setStatus("error");
-    } finally {
-      window.clearTimeout(timeoutHandle);
-      if (runId === verificationRunIdRef.current) {
-        verifyingUidRef.current = null;
-      }
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     let active = true;
@@ -348,17 +307,9 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
 
     const embedded = isEmbeddedInIframe();
     const mobile = isMobileUserAgent();
-    const host =
-      typeof window !== "undefined" ? window.location.host : null;
+    const host = typeof window !== "undefined" ? window.location.host : null;
     const redirectWasPending = readRedirectPendingFlag();
     let redirectSettled = !redirectWasPending;
-
-    // Background connectivity probe; never blocks auth initialization.
-    void testFirestoreConnection().then((result) => {
-      if (active) {
-        setConnectionReachable(result.reachable);
-      }
-    });
 
     // Bounded initialization watchdog so the UI can never stay stuck indefinitely.
     const initTimeoutId = window.setTimeout(() => {
@@ -528,7 +479,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           setRawUser(null);
           setServerSession(null);
           setStaffProfile(null);
-          setActiveFacilityIdState(null);
+          setActiveFacility(null);
           setIsSigningIn(false);
           if (!redirectErrored && statusRef.current !== "error") {
             setStatus("unauthenticated");
@@ -585,8 +536,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const startRedirectSignIn = useCallback(async () => {
     const embedded = isEmbeddedInIframe();
     const mobile = isMobileUserAgent();
-    const host =
-      typeof window !== "undefined" ? window.location.host : null;
+    const host = typeof window !== "undefined" ? window.location.host : null;
 
     authAttemptInFlightRef.current = true;
     setIsSigningIn(true);
@@ -639,8 +589,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
 
     const embedded = isEmbeddedInIframe();
     const mobile = isMobileUserAgent();
-    const host =
-      typeof window !== "undefined" ? window.location.host : null;
+    const host = typeof window !== "undefined" ? window.location.host : null;
 
     authAttemptInFlightRef.current = true;
     setIsSigningIn(true);
@@ -658,8 +607,6 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         void verifyUserAndProfile(credential.user);
       }
     } catch (err) {
-      // Guard against race conditions where Firebase Auth already established
-      // a valid user session while the popup handle closed or was superseded.
       if (auth.currentUser) {
         authAttemptInFlightRef.current = false;
         setIsSigningIn(false);
@@ -673,7 +620,6 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       });
       const summary = sanitizeNonSecretAuthMessage(err);
 
-      // Non-secret diagnostic log (never logs tokens or credentials).
       console.warn("[MedFlow Auth] signInWithPopup failed", {
         code: classified.code,
         embedded,
@@ -758,6 +704,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     verificationRunIdRef.current += 1;
     verifyingUidRef.current = null;
     activeUserUidRef.current = null;
+    preferredFacilityIdRef.current = null;
     authAttemptInFlightRef.current = false;
     writeRedirectPendingFlag(false);
     setErrorMessage(null);
@@ -770,7 +717,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       setRawUser(null);
       setServerSession(null);
       setStaffProfile(null);
-      setActiveFacilityIdState(null);
+      setActiveFacility(null);
       setStatus("unauthenticated");
     } catch (err) {
       setErrorMessage(
@@ -824,9 +771,18 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
 
   const setActiveFacilityId = useCallback(
     (facilityId: string) => {
-      if (staffProfile && staffProfile.facilityIds.includes(facilityId)) {
-        setActiveFacilityIdState(facilityId);
-      }
+      if (!staffProfile) return;
+      const membership = staffProfile.memberships.find(
+        (m) => m.facilityId === facilityId,
+      );
+      if (!membership) return;
+
+      preferredFacilityIdRef.current = membership.facilityId;
+      setActiveFacility(membership);
+      setStaffProfile({
+        ...staffProfile,
+        role: membership.role,
+      });
     },
     [staffProfile],
   );
@@ -853,8 +809,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         firebaseUser,
         serverSession,
         staffProfile,
-        activeFacilityId,
-        connectionReachable,
+        activeFacility,
+        activeFacilityId: activeFacility?.facilityId ?? null,
         errorMessage,
         authNotice,
         authDiagnostics,
@@ -862,6 +818,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         canUseRedirectFallback,
         suggestOpenInStandaloneTab,
         isSigningIn,
+        getIdToken,
+        handleSessionExpired,
         signInWithGoogle,
         signInWithGooglePopup,
         signInWithGoogleRedirect,

@@ -19,6 +19,11 @@ export function jsonError(
         message,
       },
     },
-    { status },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
   );
 }

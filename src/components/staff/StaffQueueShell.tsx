@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { FirebaseErrorBoundary } from "@/components/shared/FirebaseErrorBoundary";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   StaffAccessGate,
   type AuthorizedStaffContext,
@@ -18,103 +16,175 @@ import {
   Icon,
   PriorityLabel,
   Select,
+  type ConnectionState,
 } from "@/components/ui";
-import { auth, db } from "@/lib/firebase/client";
-import { handleFirestoreError, OperationType } from "@/lib/firebase/errors";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
 import {
-  sortIntakesDeterministically,
+  WORKFLOW_PRIORITY_LABELS,
   WORKFLOW_STATUS_LABELS,
+  type AiStatus,
   type StaffAssignedPriority,
   type WorkflowStatus,
 } from "@/lib/schemas/intake";
+import type { StaffQueueItem, StaffQueueResponse } from "@/lib/schemas/staff-api";
+import { fetchStaffQueue, StaffApiClientError } from "@/lib/staff/api-client";
+import {
+  createVisibilityAwarePoller,
+  QUEUE_POLL_INTERVAL_MS,
+  type VisibilityPollerController,
+} from "@/lib/staff/polling";
 
-interface QueueRowSummary {
-  readonly id: string;
-  readonly referenceCode: string;
-  readonly patientDisplayName?: string;
-  readonly staffAssignedPriority: StaffAssignedPriority;
-  readonly workflowStatus: WorkflowStatus;
-  readonly createdAtMs: number;
+const PAGE_SIZE = 25;
+
+const AI_STATUS_BADGE: Record<
+  AiStatus,
+  { readonly label: string; readonly tone: "neutral" | "info" | "success" | "warning" | "caution" }
+> = {
+  queued: { label: "AI queued", tone: "neutral" },
+  processing: { label: "AI processing", tone: "info" },
+  succeeded: { label: "AI draft ready", tone: "info" },
+  failed: { label: "AI unavailable", tone: "warning" },
+  needs_human_clarification: { label: "Needs clarification", tone: "caution" },
+};
+
+function formatShortTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function AuthorizedStaffQueue({
   staffProfile,
+  activeFacility,
   activeFacilityId,
+  getIdToken,
+  handleSessionExpired,
 }: AuthorizedStaffContext) {
   const { setActiveFacilityId, signOutStaff } = useStaffAuth();
-  const [rows, setRows] = useState<QueueRowSummary[]>([]);
-  const [listenerReady, setListenerReady] = useState(false);
-  const [fatalError, setFatalError] = useState<Error | null>(null);
+  const [queueData, setQueueData] = useState<StaffQueueResponse | null>(null);
+  const [loadedQueryKey, setLoadedQueryKey] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isPausedHidden, setIsPausedHidden] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [workflowFilter, setWorkflowFilter] = useState<WorkflowStatus | "">("");
+  const [priorityFilter, setPriorityFilter] = useState<
+    StaffAssignedPriority | ""
+  >("");
+  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [offset, setOffset] = useState(0);
 
-  if (fatalError) {
-    throw fatalError;
-  }
+  const queryKey = `${activeFacilityId}|${workflowFilter}|${priorityFilter}|${includeCompleted}|${offset}`;
+  const isInitialLoading = loadedQueryKey !== queryKey && errorMessage === null;
+
+  const pollerRef = useRef<VisibilityPollerController | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const fetchSequenceRef = useRef(0);
+
+  const loadQueue = useCallback(async () => {
+    const seq = ++fetchSequenceRef.current;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Defer refreshing indicator to an async microtask so poller.start() inside
+    // useEffect never triggers a synchronous setState during React commit.
+    await Promise.resolve();
+    if (seq !== fetchSequenceRef.current || controller.signal.aborted) return;
+    setIsRefreshing(true);
+
+    try {
+      const response = await fetchStaffQueue({
+        getIdToken,
+        facilityId: activeFacilityId,
+        workflowStatus: workflowFilter,
+        priority: priorityFilter,
+        includeCompleted,
+        limit: PAGE_SIZE,
+        offset,
+        signal: controller.signal,
+      });
+
+      if (seq !== fetchSequenceRef.current) return;
+
+      setQueueData(response);
+      setLoadedQueryKey(queryKey);
+      setErrorMessage(null);
+    } catch (err) {
+      if (seq !== fetchSequenceRef.current) return;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+
+      if (err instanceof StaffApiClientError && err.isAuthExpired) {
+        handleSessionExpired(err.message);
+        return;
+      }
+
+      setLoadedQueryKey(queryKey);
+      setErrorMessage(
+        err instanceof StaffApiClientError
+          ? err.message
+          : "Unable to refresh the facility queue from the server. Retry shortly.",
+      );
+    } finally {
+      if (seq === fetchSequenceRef.current) {
+        setIsRefreshing(false);
+      }
+    }
+  }, [
+    activeFacilityId,
+    getIdToken,
+    handleSessionExpired,
+    includeCompleted,
+    offset,
+    priorityFilter,
+    queryKey,
+    workflowFilter,
+  ]);
 
   useEffect(() => {
-    const queuePath = `intakes?facilityId=${activeFacilityId}`;
-    const q = query(
-      collection(db, "intakes"),
-      where("facilityId", "==", activeFacilityId),
-    );
+    const poller = createVisibilityAwarePoller({
+      intervalMs: QUEUE_POLL_INTERVAL_MS,
+      task: loadQueue,
+      onVisibilityPauseChange: setIsPausedHidden,
+    });
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const items: QueueRowSummary[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const createdAt = data.createdAt as { toMillis?: () => number } | null;
-          const createdAtMs =
-            createdAt && typeof createdAt.toMillis === "function"
-              ? createdAt.toMillis()
-              : 0;
-          return {
-            id: docSnap.id,
-            referenceCode:
-              typeof data.referenceCode === "string"
-                ? data.referenceCode
-                : docSnap.id,
-            patientDisplayName:
-              typeof data.patientDisplayName === "string"
-                ? data.patientDisplayName
-                : undefined,
-            staffAssignedPriority:
-              data.staffAssignedPriority === "immediate_review" ||
-              data.staffAssignedPriority === "priority_review" ||
-              data.staffAssignedPriority === "routine_review"
-                ? data.staffAssignedPriority
-                : "unassigned",
-            workflowStatus:
-              data.workflowStatus === "in_review" ||
-              data.workflowStatus === "awaiting_clarification" ||
-              data.workflowStatus === "completed"
-                ? data.workflowStatus
-                : "new",
-            createdAtMs,
-          };
-        });
-        setRows(sortIntakesDeterministically(items));
-        setListenerReady(true);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, queuePath, auth);
-        } catch (wrapped) {
-          setFatalError(
-            wrapped instanceof Error ? wrapped : new Error(String(wrapped)),
-          );
-        }
-      },
-    );
+    pollerRef.current = poller;
+    poller.start();
 
     return () => {
-      unsubscribe();
+      poller.stop();
+      pollerRef.current = null;
+      abortControllerRef.current?.abort();
     };
-  }, [activeFacilityId]);
+  }, [loadQueue]);
 
-  const unassignedCount = rows.filter(
-    (r) => r.staffAssignedPriority === "unassigned",
-  ).length;
+  const rows: readonly StaffQueueItem[] = queueData?.items ?? [];
+  const totalCount = queueData?.pagination.total ?? 0;
+  const unassignedCount = queueData?.counts.unassigned ?? 0;
+  const aiUnavailableCount = queueData?.counts.aiUnavailable ?? 0;
+  const hasMore = queueData?.pagination.hasMore ?? false;
+  const pageStart = totalCount === 0 ? 0 : offset + 1;
+  const pageEnd = offset + rows.length;
+
+  let connectionState: ConnectionState = "connected";
+  let connectionLabel = "Live · 5s sync";
+
+  if (errorMessage) {
+    connectionState = "unavailable";
+    connectionLabel = "Queue sync error";
+  } else if (isPausedHidden) {
+    connectionState = "updating";
+    connectionLabel = "Paused · tab hidden";
+  } else if (isInitialLoading || isRefreshing) {
+    connectionState = "updating";
+    connectionLabel = isInitialLoading ? "Loading queue" : "Syncing queue";
+  }
 
   return (
     <div className="mf-dash-wrap">
@@ -128,7 +198,7 @@ function AuthorizedStaffQueue({
           >
             <Icon name="list" size="md" />
             <span>Patient queue</span>
-            <span className="mf-nav__count">{rows.length}</span>
+            <span className="mf-nav__count">{totalCount}</span>
           </Link>
           <Link href="/" className="mf-nav__item">
             <Icon name="clipboard" size="md" />
@@ -139,7 +209,7 @@ function AuthorizedStaffQueue({
             <div className="font-semibold text-white">
               {staffProfile.displayName}
             </div>
-            <div className="capitalize">{staffProfile.role}</div>
+            <div className="capitalize">{activeFacility.role}</div>
             <div className="mf-mono text-[11px]">{activeFacilityId}</div>
           </div>
         </aside>
@@ -153,34 +223,44 @@ function AuthorizedStaffQueue({
               </h1>
               <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
                 Signed in as <strong>{staffProfile.displayName}</strong> (
-                <span className="capitalize">{staffProfile.role}</span>) ·
-                Facility{" "}
+                <span className="capitalize">{activeFacility.role}</span>) ·{" "}
+                <strong>{activeFacility.facilityName}</strong> (
                 <code className="mf-mono text-[13px] text-[var(--mf-text)]">
                   {activeFacilityId}
                 </code>
+                )
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              {staffProfile.facilityIds.length > 1 && (
+              {staffProfile.memberships.length > 1 && (
                 <div className="w-[220px]">
                   <Select
                     aria-label="Active facility"
                     value={activeFacilityId}
-                    onChange={(e) => setActiveFacilityId(e.target.value)}
+                    onChange={(e) => {
+                      setOffset(0);
+                      setActiveFacilityId(e.target.value);
+                    }}
                   >
-                    {staffProfile.facilityIds.map((fid) => (
-                      <option key={fid} value={fid}>
-                        {fid}
+                    {staffProfile.memberships.map((m) => (
+                      <option key={m.facilityId} value={m.facilityId}>
+                        {m.facilityName} ({m.facilityId})
                       </option>
                     ))}
                   </Select>
                 </div>
               )}
-              <ConnectionChip
-                state={listenerReady ? "connected" : "updating"}
-                label={listenerReady ? "Live facility listener" : "Connecting queue"}
-              />
+              <ConnectionChip state={connectionState} label={connectionLabel} />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void pollerRef.current?.triggerNow()}
+                disabled={isRefreshing}
+              >
+                <Icon name="refresh" size="sm" spin={isRefreshing} />
+                Refresh
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -194,22 +274,126 @@ function AuthorizedStaffQueue({
           <ClinicalPanel
             source="nurse"
             sourceLabel="Staff-controlled priority"
-            title={`Active submissions (${rows.length})`}
-            subtitle="Ordered deterministically: unassigned intakes first, then staff-assigned workflow priority, oldest first."
+            title={`Active submissions (${totalCount})`}
+            subtitle="Ordered deterministically: unassigned intakes first, then staff-assigned workflow priority, oldest first. Auto-refreshes every 5 seconds while tab is visible."
             action={
-              unassignedCount > 0 ? (
-                <Badge tone="warning" icon="clock">
-                  {unassignedCount} unassigned
-                </Badge>
-              ) : null
+              <div className="flex flex-wrap items-center gap-2">
+                {unassignedCount > 0 ? (
+                  <Badge tone="warning" icon="clock">
+                    {unassignedCount} unassigned
+                  </Badge>
+                ) : null}
+                {aiUnavailableCount > 0 ? (
+                  <Badge tone="caution" icon="alert">
+                    {aiUnavailableCount} AI unavailable
+                  </Badge>
+                ) : null}
+              </div>
             }
           >
-            {!listenerReady ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label
+                  htmlFor="queue-status-filter"
+                  className="mf-t-label mb-1 block text-[var(--mf-text-secondary)]"
+                >
+                  Workflow status
+                </label>
+                <Select
+                  id="queue-status-filter"
+                  value={workflowFilter}
+                  onChange={(e) => {
+                    setOffset(0);
+                    setWorkflowFilter(e.target.value as WorkflowStatus | "");
+                  }}
+                >
+                  <option value="">All active statuses</option>
+                  <option value="new">{WORKFLOW_STATUS_LABELS.new}</option>
+                  <option value="in_review">
+                    {WORKFLOW_STATUS_LABELS.in_review}
+                  </option>
+                  <option value="awaiting_clarification">
+                    {WORKFLOW_STATUS_LABELS.awaiting_clarification}
+                  </option>
+                  <option value="completed">
+                    {WORKFLOW_STATUS_LABELS.completed}
+                  </option>
+                </Select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="queue-priority-filter"
+                  className="mf-t-label mb-1 block text-[var(--mf-text-secondary)]"
+                >
+                  Staff-assigned priority
+                </label>
+                <Select
+                  id="queue-priority-filter"
+                  value={priorityFilter}
+                  onChange={(e) => {
+                    setOffset(0);
+                    setPriorityFilter(
+                      e.target.value as StaffAssignedPriority | "",
+                    );
+                  }}
+                >
+                  <option value="">All priorities</option>
+                  <option value="unassigned">
+                    {WORKFLOW_PRIORITY_LABELS.unassigned}
+                  </option>
+                  <option value="immediate_review">
+                    {WORKFLOW_PRIORITY_LABELS.immediate_review}
+                  </option>
+                  <option value="priority_review">
+                    {WORKFLOW_PRIORITY_LABELS.priority_review}
+                  </option>
+                  <option value="routine_review">
+                    {WORKFLOW_PRIORITY_LABELS.routine_review}
+                  </option>
+                </Select>
+              </div>
+
+              <div className="flex items-end">
+                <label className="flex cursor-pointer items-center gap-2 pb-2 text-[14px] text-[var(--mf-text)]">
+                  <input
+                    type="checkbox"
+                    checked={includeCompleted}
+                    disabled={workflowFilter === "completed"}
+                    onChange={(e) => {
+                      setOffset(0);
+                      setIncludeCompleted(e.target.checked);
+                    }}
+                  />
+                  <span>Include completed intake records</span>
+                </label>
+              </div>
+            </div>
+
+            {errorMessage && (
+              <Alert tone="danger" title="Queue refresh unavailable">
+                <div className="grid gap-2">
+                  <span>{errorMessage}</span>
+                  <div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void pollerRef.current?.triggerNow()}
+                    >
+                      <Icon name="refresh" size="sm" />
+                      Retry queue sync
+                    </Button>
+                  </div>
+                </div>
+              </Alert>
+            )}
+
+            {isInitialLoading ? (
               <div className="grid gap-2 py-2" aria-busy="true">
                 <span className="mf-skel h-12 w-full" />
                 <span className="mf-skel h-12 w-full" />
               </div>
-            ) : rows.length === 0 ? (
+            ) : rows.length === 0 && !errorMessage ? (
               <div className="grid gap-3">
                 <div className="mf-empty">
                   <Icon
@@ -218,11 +402,11 @@ function AuthorizedStaffQueue({
                     className="text-[var(--mf-text-secondary)]"
                   />
                   <div className="mf-empty__title">
-                    No intake records in this facility yet
+                    No intake records match this facility view
                   </div>
                   <p className="mf-t-body-sm m-0 max-w-[46ch]">
-                    Your authenticated facility-scoped Firestore query succeeded
-                    with zero records.
+                    Your server-authorized PostgreSQL facility query succeeded
+                    with zero matching records.
                   </p>
                 </div>
                 <Alert tone="info" title="Milestone 2 intake pipeline pending">
@@ -231,49 +415,105 @@ function AuthorizedStaffQueue({
                   Workflow priority remains exclusively staff-controlled.
                 </Alert>
               </div>
-            ) : (
+            ) : rows.length > 0 ? (
               <div className="-mx-4 -mb-4">
                 <div className="mf-queue__band">
-                  <span>Facility queue · {activeFacilityId}</span>
-                  <span className="mf-mono">{rows.length} records</span>
+                  <span>
+                    Facility queue · {activeFacility.facilityPublicCode}
+                  </span>
+                  <span className="mf-mono">
+                    Showing {pageStart}–{pageEnd} of {totalCount}
+                  </span>
                 </div>
                 <ul className="mf-queue m-0 list-none p-0">
-                  {rows.map((row) => (
-                    <li
-                      key={row.id}
-                      className="mf-qitem"
-                      data-priority={row.staffAssignedPriority}
-                    >
-                      <div className="mf-qitem__link">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="mf-t-data text-[var(--mf-text)]">
-                            {row.referenceCode}
-                          </span>
-                          {row.patientDisplayName ? (
-                            <span className="font-medium text-[var(--mf-text-secondary)]">
-                              {row.patientDisplayName}
-                            </span>
-                          ) : null}
-                          <PriorityLabel priority={row.staffAssignedPriority} />
-                          <Badge tone="neutral">
-                            {WORKFLOW_STATUS_LABELS[row.workflowStatus]}
-                          </Badge>
-                        </div>
+                  {rows.map((row) => {
+                    const aiBadge = AI_STATUS_BADGE[row.aiStatus];
+                    return (
+                      <li
+                        key={row.id}
+                        className="mf-qitem"
+                        data-priority={row.staffAssignedPriority}
+                      >
+                        <div className="mf-qitem__link">
+                          <div className="grid gap-1.5">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <span className="mf-t-data text-[var(--mf-text)]">
+                                {row.referenceCode}
+                              </span>
+                              {row.patientDisplayName ? (
+                                <span className="font-medium text-[var(--mf-text-secondary)]">
+                                  {row.patientDisplayName}
+                                </span>
+                              ) : null}
+                              {row.age !== null ? (
+                                <span className="mf-mono text-[12px] text-[var(--mf-text-secondary)]">
+                                  {row.age}y
+                                </span>
+                              ) : null}
+                              {row.demoRecord ? (
+                                <Badge tone="neutral">DEMO DATA</Badge>
+                              ) : null}
+                              <PriorityLabel
+                                priority={row.staffAssignedPriority}
+                              />
+                              <Badge tone="neutral">
+                                {WORKFLOW_STATUS_LABELS[row.workflowStatus]}
+                              </Badge>
+                              <Badge tone={aiBadge.tone}>{aiBadge.label}</Badge>
+                            </div>
+                            <div className="mf-mono text-[12px] text-[var(--mf-text-secondary)]">
+                              Submitted {formatShortTimestamp(row.createdAt)} ·{" "}
+                              {row.inputMode === "voice"
+                                ? "Voice intake"
+                                : "Typed intake"}{" "}
+                              · Review:{" "}
+                              {row.staffReviewStatus.replaceAll("_", " ")}
+                            </div>
+                          </div>
 
-                        <ButtonLink
-                          href={`/staff/intakes/${encodeURIComponent(row.id)}`}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          Inspect record
-                          <Icon name="arrow" size="sm" />
-                        </ButtonLink>
-                      </div>
-                    </li>
-                  ))}
+                          <ButtonLink
+                            href={`/staff/intakes/${encodeURIComponent(row.id)}`}
+                            variant="secondary"
+                            size="sm"
+                          >
+                            Inspect record
+                            <Icon name="arrow" size="sm" />
+                          </ButtonLink>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
+
+                {(offset > 0 || hasMore) && (
+                  <div className="flex items-center justify-between gap-3 border-t border-[var(--mf-border)] px-4 py-3">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={offset === 0 || isRefreshing}
+                      onClick={() =>
+                        setOffset((prev) => Math.max(0, prev - PAGE_SIZE))
+                      }
+                    >
+                      <Icon name="arrowLeft" size="sm" />
+                      Previous
+                    </Button>
+                    <span className="mf-mono text-[12px] text-[var(--mf-text-secondary)]">
+                      {pageStart}–{pageEnd} of {totalCount}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!hasMore || isRefreshing}
+                      onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+                    >
+                      Next
+                      <Icon name="arrow" size="sm" />
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
+            ) : null}
           </ClinicalPanel>
         </main>
       </div>
@@ -283,13 +523,11 @@ function AuthorizedStaffQueue({
 
 export function StaffQueueShell() {
   return (
-    <FirebaseErrorBoundary title="Facility queue authorization error">
-      <StaffAccessGate
-        surfaceTitle="Staff authentication required"
-        surfaceSubtitle="Facility-scoped clinical intake queue"
-      >
-        {(context) => <AuthorizedStaffQueue {...context} />}
-      </StaffAccessGate>
-    </FirebaseErrorBoundary>
+    <StaffAccessGate
+      surfaceTitle="Staff authentication required"
+      surfaceSubtitle="Facility-scoped clinical intake queue"
+    >
+      {(context) => <AuthorizedStaffQueue {...context} />}
+    </StaffAccessGate>
   );
 }

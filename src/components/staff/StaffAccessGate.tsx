@@ -11,12 +11,19 @@ import {
   Icon,
 } from "@/components/ui";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
-import type { StaffProfile, StaffSessionResponse } from "@/lib/schemas/staff";
+import type {
+  AuthorizedFacilityMembership,
+  PostgresStaffSessionResponse,
+  ResolvedStaffProfile,
+} from "@/lib/schemas/staff-api";
 
 export interface AuthorizedStaffContext {
-  readonly staffProfile: StaffProfile;
-  readonly serverSession: StaffSessionResponse;
+  readonly staffProfile: ResolvedStaffProfile;
+  readonly serverSession: PostgresStaffSessionResponse;
+  readonly activeFacility: AuthorizedFacilityMembership;
   readonly activeFacilityId: string;
+  readonly getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
+  readonly handleSessionExpired: (message?: string) => void;
 }
 
 interface StaffAccessGateProps {
@@ -35,8 +42,11 @@ export function StaffAccessGate({
     firebaseUser,
     serverSession,
     staffProfile,
+    activeFacility,
     activeFacilityId,
     errorMessage,
+    getIdToken,
+    handleSessionExpired,
     signOutStaff,
     refreshAuthorization,
   } = useStaffAuth();
@@ -81,7 +91,7 @@ export function StaffAccessGate({
                 ? "Checking whether a Firebase authentication session is already active in this browser..."
                 : status === "authenticating"
                   ? "Completing Google Sign-In before verifying your clinical staff authorization..."
-                  : "Validating Firebase ID token signature on the server and checking provisioned facility membership in Firestore."}
+                  : "Validating Firebase ID token signature on the server and resolving provisioned facility membership from PostgreSQL..."}
             </p>
           </div>
         </ClinicalPanel>
@@ -93,6 +103,7 @@ export function StaffAccessGate({
     status === "authorized" &&
     staffProfile &&
     serverSession &&
+    activeFacility &&
     activeFacilityId
   ) {
     return (
@@ -100,7 +111,10 @@ export function StaffAccessGate({
         {children({
           staffProfile,
           serverSession,
+          activeFacility,
           activeFacilityId,
+          getIdToken,
+          handleSessionExpired,
         })}
       </>
     );
@@ -120,7 +134,7 @@ export function StaffAccessGate({
         source="nurse"
         sourceLabel="Restricted surface"
         title="Access verification status"
-        subtitle="Server-verified ID token and provisioned facility membership required"
+        subtitle="Server-verified ID token and provisioned PostgreSQL facility membership required"
         action={
           status === "unprovisioned" ? (
             <Badge tone="warning" icon="shield">
@@ -139,9 +153,8 @@ export function StaffAccessGate({
       >
         {status === "unauthenticated" && (
           <Alert tone="danger" title="Staff authentication required">
-            Unauthenticated users cannot view clinical intake records or the
-            facility queue. Sign in with a provisioned Google staff account to
-            continue.
+            {errorMessage ??
+              "Unauthenticated users cannot view clinical intake records or the facility queue. Sign in with a provisioned Google staff account to continue."}
           </Alert>
         )}
 
@@ -159,11 +172,9 @@ export function StaffAccessGate({
               title="Sign-in succeeded, but staff access is not provisioned"
             >
               Google Sign-In and server ID token verification succeeded, but no
-              provisioned profile exists at{" "}
-              <code className="mf-mono text-[13px]">
-                staff/{firebaseUser.uid}
-              </code>
-              . Authentication alone never grants clinical access.
+              provisioned clinical staff profile exists in MedFlow&apos;s
+              database for this account. Authentication alone never grants
+              clinical access.
             </Alert>
             <div className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
               <p className="mf-t-label m-0 mb-2 font-semibold text-[var(--mf-text)]">
@@ -185,8 +196,8 @@ export function StaffAccessGate({
 
         {status === "inactive" && (
           <Alert tone="danger" title="Staff profile inactive">
-            Your staff record is currently inactive or has no assigned
-            facilities. Contact a facility administrator to restore access.
+            Your staff record is currently inactive or has no active facility
+            memberships. Contact a facility administrator to restore access.
           </Alert>
         )}
 

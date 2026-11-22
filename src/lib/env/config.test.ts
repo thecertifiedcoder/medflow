@@ -22,6 +22,20 @@ test("getPublicConfig trims explicit public values", () => {
   assert.equal(cfg.appEnv, "preview");
 });
 
+test("retired demo-facility-001 and DEMO-FACILITY normalize to canonical demo-clinic-01 and DEMO-CLINIC-01", () => {
+  const pub = getPublicConfig({
+    NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE: "DEMO-FACILITY",
+  });
+  assert.equal(pub.demoFacilityPublicCode, "DEMO-CLINIC-01");
+
+  const srv = getServerConfig({
+    DEMO_FACILITY_ID: "demo-facility-001",
+    NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE: "DEMO-FACILITY",
+  });
+  assert.equal(srv.demoFacilityId, "demo-clinic-01");
+  assert.equal(srv.demoFacilityPublicCode, "DEMO-CLINIC-01");
+});
+
 test("getServerConfig uses canonical demo-clinic-01, approved Gemini models, and never exposes raw secrets", () => {
   const cfg = getServerConfig({
     GEMINI_API_KEY: "test-placeholder-only",

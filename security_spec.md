@@ -11,10 +11,11 @@ Defined in `src/db/schema.ts`, `src/db/invariants.ts`, `drizzle/0000_initial_med
 
 ### A.1 Server-Only Trust & Credential Boundaries
 
-1. **Identity vs. Authorization Split:** Firebase Authentication (`daring-brace-jw1xt`, Google Sign-In via same-origin `/__/auth/*` proxy) proves user identity only. Protected Next.js Route Handlers verify `Authorization: Bearer <idToken>` server-side via `verifyIdToken(token)`, require `email_verified === true`, and authorize every operation against PostgreSQL `staff_profiles`, `facility_memberships`, and `facilities`.
-2. **Zero Browser Database Exposure:** `src/db/index.ts` enforces `assertServerRuntime()` and connects strictly via server-only `DATABASE_URL` (pooled Neon runtime, TLS `rejectUnauthorized: true`). Direct schema migrations (`drizzle.config.ts`) and founder-run CLI seeding (`src/db/seed.ts`) use server-only `DATABASE_URL_UNPOOLED`. Neither variable is ever prefixed with `NEXT_PUBLIC_` or exposed to client bundles.
-3. **No Client Self-Provisioning (Option 2B):** Ordinary clients have no API path to create or modify `facilities`, `staff_profiles`, or `facility_memberships`. Initial provisioning is performed exclusively through founder-run `src/db/seed.ts` (with optional validated `SEED_ADMIN_*` environment variables and zero hardcoded personal credentials).
-4. **Deferred Provenance Signing Secret:** `EVIDENCE_HMAC_SECRET` is intentionally deferred until Milestone 3 (Evidence Integrity Engine implementation).
+1. **Identity vs. Authorization Split (`src/lib/auth/staff-authorization.ts`):** Firebase Authentication (`daring-brace-jw1xt`, Google Sign-In via same-origin `/__/auth/*` proxy) proves user identity only. Protected Next.js Route Handlers call `resolveStaffSession()` / `requireAuthorizedStaff()`, which verify `Authorization: Bearer <idToken>` server-side via `verifyIdToken(token)`, require `email_verified === true`, and authorize every operation against PostgreSQL `staff_profiles`, `facility_memberships`, and active `facilities`. Client-supplied UIDs, roles, or unowned `facilityId` values are never trusted.
+2. **Zero Browser Database Exposure & Safe Error Masking (`src/lib/db/errors.ts`, `src/lib/http/errors.ts`):** `src/db/index.ts` enforces `assertServerRuntime()` and connects strictly via server-only `DATABASE_URL` (pooled Neon runtime, TLS `rejectUnauthorized: true`). Direct schema migrations (`drizzle.config.ts`) and founder-run CLI seeding (`src/db/seed.ts`) use server-only `DATABASE_URL_UNPOOLED`. Neither variable is ever prefixed with `NEXT_PUBLIC_` or exposed to client bundles. Database unavailability (`503 DATABASE_UNAVAILABLE`) and query errors (`500 DATABASE_QUERY_FAILED`) return sanitized JSON with `Cache-Control: no-store` and never leak connection URIs, SQL statements, or `pg` driver internals.
+3. **Cross-Facility Non-Disclosure & Minimal Queue Projection:** `GET /api/staff/intakes` returns only bounded queue summary fields (excluding full patient narratives and briefs) scoped strictly to the caller's verified `facilityId` (`403 FACILITY_ACCESS_DENIED` on explicit unauthorized facility requests). `GET /api/staff/intakes/[intakeId]` queries by `(id, verified_facility_id)` and returns an identical safe `404 INTAKE_NOT_FOUND` for both non-existent and cross-facility UUIDs to prevent cross-tenant existence oracles.
+4. **No Client Self-Provisioning (Option 2B):** Ordinary clients have no API path to create or modify `facilities`, `staff_profiles`, or `facility_memberships`. Initial provisioning is performed exclusively through founder-run `src/db/seed.ts` (with optional validated `SEED_ADMIN_*` environment variables and zero hardcoded personal credentials).
+5. **Deferred Provenance Signing Secret:** `EVIDENCE_HMAC_SECRET` is intentionally deferred until Milestone 3 (Evidence Integrity Engine implementation).
 
 ### A.2 Database-Enforced Clinical Safety Invariants (SQL Constraints & Triggers)
 
@@ -47,15 +48,6 @@ Defined in `src/db/schema.ts`, `src/db/invariants.ts`, `drizzle/0000_initial_med
 
 ---
 
-## Part B — Transitional Firestore Security Specification (Active During Phase 1D-1 Only; Decommissioned in Phase 1D-3)
+## Part B — Legacy Firestore Decommissioning Record (Completed in Phase 1D-3)
 
-**Project:** `daring-brace-jw1xt` (Starter Tier, `europe-west3`)  
-**Database:** `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`  
-**Status:** Preserved untouched during Phase 1D-1 while PostgreSQL migrations are built offline. Scheduled for removal in Phase 1D-3 after live Neon cutover.
-
-### B.1 Transitional Firestore Invariants
-
-1. **Zero-Trust Default Deny:** `match /{document=**} { allow read, write: if false; }`.
-2. **No Client Facility or Staff Self-Provisioning (Option 2B):** `/facilities/{facilityId}` and `/staff/{uid}` deny all client `create`, `update`, and `delete` operations.
-3. **Staff PII Isolation:** `/staff/{uid}` allows `get` only for `request.auth.uid == uid` with verified email; `list` is denied.
-4. **Facility-Scoped Staff Reads & Atomic Audited Mutations:** All reads and updates require active facility membership, immutable original patient narrative, staff-only AI draft persistence (Option 1B), and append-only `auditEvents`.
+**Status:** Cloud Firestore is fully decommissioned as of Phase 1D-3 under ADR `D-020`. All legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), Firestore client initialization (`getFirestore`/`db`/`testFirestoreConnection`), and `@firebase/eslint-plugin-security-rules` have been removed. Firebase Authentication (`daring-brace-jw1xt`, Google Sign-In + `/__/auth/*` same-origin proxy + server-side `verifyIdToken`) remains intact as the identity provider only, and live Neon PostgreSQL enforces invariants PG-01 through PG-06 at the database layer.

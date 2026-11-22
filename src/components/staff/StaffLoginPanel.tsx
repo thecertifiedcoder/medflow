@@ -16,8 +16,8 @@ export function StaffLoginPanel() {
     status,
     firebaseUser,
     staffProfile,
+    activeFacility,
     activeFacilityId,
-    connectionReachable,
     errorMessage,
     authNotice,
     authDiagnostics,
@@ -38,7 +38,7 @@ export function StaffLoginPanel() {
       source="nurse"
       sourceLabel="Staff portal"
       title="Staff sign in"
-      subtitle="Google Sign-In · Server ID token verification · Provisioned facility membership"
+      subtitle="Google Sign-In · Server ID token verification · PostgreSQL facility authorization"
       action={
         <Badge
           tone={status === "authorized" ? "success" : "brand"}
@@ -48,13 +48,6 @@ export function StaffLoginPanel() {
         </Badge>
       }
     >
-      {connectionReachable === false && (
-        <Alert tone="danger" title="Firestore connection unavailable">
-          The client could not reach Firestore. Check your network connection or
-          Firebase configuration before signing in.
-        </Alert>
-      )}
-
       {errorMessage && (
         <Alert tone="danger" title="Authentication notice">
           {errorMessage}
@@ -149,8 +142,8 @@ export function StaffLoginPanel() {
 
       {status === "verifying" && (
         <Alert tone="info" icon="loader" iconSpin title="Verifying session">
-          Verifying your Firebase ID token signature on the server and reading
-          your provisioned staff profile...
+          Verifying your Firebase ID token on the server and resolving your
+          provisioned staff profile and facility membership...
         </Alert>
       )}
 
@@ -158,11 +151,9 @@ export function StaffLoginPanel() {
         <div className="grid gap-4">
           <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
             Sign in with your Google account. MedFlow verifies your Firebase ID
-            token on the server and checks for an active provisioned record in{" "}
-            <code className="mf-mono text-[13px] text-[var(--mf-text)]">
-              staff/&#123;uid&#125;
-            </code>{" "}
-            before granting access to any facility queue.
+            token on the server and resolves your active clinical role and
+            facility membership in PostgreSQL before granting access to any
+            facility queue.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
@@ -222,12 +213,9 @@ export function StaffLoginPanel() {
             title="Authenticated, but not provisioned as clinical staff"
           >
             Google Sign-In and server-side ID token verification succeeded, but
-            no provisioned document exists at{" "}
-            <code className="mf-mono text-[13px]">
-              staff/{firebaseUser.uid}
-            </code>
-            . No queue or patient records are accessible until an administrator
-            provisions your profile in the Firebase Console.
+            no provisioned staff profile exists in MedFlow&apos;s database for
+            this account. No queue or patient records are accessible until an
+            administrator provisions your staff profile and facility membership.
           </Alert>
           <div className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
             <p className="mf-t-label m-0 mb-2 font-semibold text-[var(--mf-text)]">
@@ -266,8 +254,8 @@ export function StaffLoginPanel() {
       {status === "inactive" && (
         <div className="grid gap-3">
           <Alert tone="danger" title="Staff profile is inactive">
-            Your provisioned staff profile is marked inactive or has no
-            authorised facility assignments.
+            Your provisioned staff profile is marked inactive or has no active
+            facility memberships.
           </Alert>
           <div className="flex flex-wrap gap-3">
             <Button
@@ -281,13 +269,14 @@ export function StaffLoginPanel() {
         </div>
       )}
 
-      {status === "authorized" && staffProfile && (
+      {status === "authorized" && staffProfile && activeFacility && (
         <div className="grid gap-3">
           <Alert tone="success" title="Staff session verified">
             Signed in as <strong>{staffProfile.displayName}</strong> (
-            <span className="capitalize">{staffProfile.role}</span>) with
-            server-verified ID token and authorised access to facility{" "}
-            <code className="mf-mono text-[13px]">{activeFacilityId}</code>.
+            <span className="capitalize">{activeFacility.role}</span>) with
+            server-verified ID token and authorized access to{" "}
+            <strong>{activeFacility.facilityName}</strong> (
+            <code className="mf-mono text-[13px]">{activeFacilityId}</code>).
           </Alert>
           <div className="flex flex-wrap gap-3">
             <ButtonLink href="/staff/queue" variant="primary" size="md">

@@ -1,4 +1,4 @@
-import type { StaffProfile } from "@/lib/schemas/staff";
+import type { ResolvedStaffProfile } from "@/lib/schemas/staff-api";
 
 export type StaffAuthStatus =
   | "initializing"
@@ -361,7 +361,7 @@ export function classifyRedirectResultError(error: unknown): {
 }
 
 export function deriveProfileAuthorizationStatus(
-  profile: StaffProfile,
+  profile: Pick<ResolvedStaffProfile, "uid" | "active" | "facilityIds">,
   expectedUid: string,
   previousFacilityId: string | null,
 ): ProfileAuthorizationResult {

@@ -144,11 +144,11 @@ The diagram describes logical responsibilities under ADR `D-020`. Keep the MVP a
   5. **Staff-review consistency:** `CHECK` constraint `patient_intakes_staff_review_consistency_chk` enforces internal consistency across `staff_review_status`, `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note`.
 - **Canonical synthetic facility:** `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`) is the sole canonical synthetic demo facility (`demo-facility-001` and `DEMO-FACILITY` are retired).
 
-### 6.1 Migration transition status (Milestone 1D phases)
+### 6.1 Migration transition status (Milestone 1D — Complete)
 
-- **Phase 1D-1 (Complete — offline foundation):** Installed `pg`, `drizzle-orm`, `@types/pg`, `drizzle-kit`; authored `src/db/schema.ts`, `src/db/invariants.ts`, `src/db/index.ts`, `src/db/seed.ts`, `drizzle.config.ts`; generated offline SQL migrations `drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql`; verified with offline schema, invariant, env, lint, typecheck, and build checks. **No live Neon operations executed in Phase 1D-1.** Existing Firestore rules/client files remain untouched until Phases 1D-2/1D-3.
-- **Phase 1D-2 (Pending founder approval):** Implement PostgreSQL repository/service layer, migrate `/api/staff/session` and staff/patient Route Handlers to Neon PostgreSQL, and cut over UI components to visibility-aware polling of `/api/staff/intakes`.
-- **Phase 1D-3 (Pending Neon credentials & founder approval):** Run `drizzle-kit migrate` and `src/db/seed.ts` against the founder-provisioned Neon database, run live end-to-end verification, and decommission legacy Firestore files (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/firestore.ts`, etc.) while keeping Firebase Authentication intact.
+- **Phase 1D-1 (Complete — offline foundation):** Installed `pg`, `drizzle-orm`, `@types/pg`, `drizzle-kit`; authored `src/db/schema.ts`, `src/db/invariants.ts`, `src/db/index.ts`, `src/db/seed.ts`, `drizzle.config.ts`; generated SQL migrations `drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql`; verified with offline schema, invariant, env, lint, typecheck, and build checks.
+- **Phase 1D-2 (Complete — server APIs & UI cutover):** Implemented server-only PostgreSQL staff repository (`src/lib/db/staff-repository.ts`, `src/lib/db/errors.ts`), reusable Firebase ID-token + PostgreSQL RBAC/facility-membership authorization boundary (`src/lib/auth/staff-authorization.ts`), strict staff API contracts (`src/lib/schemas/staff-api.ts`), authenticated Route Handlers (`GET /api/staff/session`, `GET /api/staff/intakes`, `GET /api/staff/intakes/[intakeId]` via `src/lib/api/staff-handlers.ts`), authenticated client wrapper (`src/lib/staff/api-client.ts`), and 5-second visibility-aware queue polling (`src/lib/staff/polling.ts`). Cut over all active staff UI views to same-origin PostgreSQL APIs.
+- **Phase 1D-3 (Complete — live Neon cutover & Firestore decommissioning):** Added `src/db/migrate.ts` and `src/db/live-verification.test.ts`; applied Drizzle SQL migrations (`0000_initial_medflow_schema.sql`, `0001_immutability_triggers.sql`) to live Neon PostgreSQL via `DATABASE_URL_UNPOOLED`; ran idempotent `src/db/seed.ts` twice to verify canonical `demo-clinic-01` (`DEMO-CLINIC-01`); verified all 6 tables, all 3 immutability triggers, live PG-01..PG-06 constraint/trigger enforcement (inside a rolled-back transaction), and live pooled `DATABASE_URL` Drizzle reads via `createDrizzleStaffRepository()`. Removed all legacy Cloud Firestore files (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), removed `@firebase/eslint-plugin-security-rules`, and refactored `src/lib/firebase/client.ts` / `config.ts` to Firebase Authentication only (preserving Google Sign-In and the same-origin `/__/auth/*` proxy intact). Note: initial staff profile seeding awaits founder-supplied `SEED_ADMIN_*` values per Option 2B (`D-016`).
 
 
 ## 7. Data-flow rules
@@ -169,14 +169,16 @@ The diagram describes logical responsibilities under ADR `D-020`. Keep the MVP a
 
 Implement the API contracts in `docs/09_DATA_MODEL_AND_API_CONTRACTS.md` as Next.js Route Handlers:
 
-- `POST /api/intakes`
-- `POST /api/intakes/transcribe`
-- `POST /api/intakes/[intakeId]/extract`
-- `GET /api/staff/intakes`
-- `POST /api/staff/intakes/[intakeId]/review`
-- `POST /api/staff/intakes/[intakeId]/brief-review`
-- `POST /api/staff/intakes/[intakeId]/priority`
-- `POST /api/staff/intakes/[intakeId]/status`
+- `GET /api/staff/session` *(implemented in Phase 1D-2)*
+- `GET /api/staff/intakes` *(implemented in Phase 1D-2)*
+- `GET /api/staff/intakes/[intakeId]` *(implemented in Phase 1D-2)*
+- `POST /api/intakes` *(Milestone 2)*
+- `POST /api/intakes/transcribe` *(Milestone 2)*
+- `POST /api/intakes/[intakeId]/extract` *(Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/review` *(Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/brief-review` *(Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/priority` *(Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/status` *(Milestone 2)*
 
 Route Handlers validate request bodies, authenticate/authorise protected actions, call domain services and return safe response shapes. Do not expose provider errors, stack traces, credentials or database internals. Use the Web Request/Response APIs supported by Next.js Route Handlers. Do not create a parallel Express API.
 
