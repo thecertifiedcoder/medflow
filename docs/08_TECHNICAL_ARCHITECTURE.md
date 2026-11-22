@@ -13,7 +13,7 @@ The application framework is **Next.js with the App Router**. This is an explici
 | Framework | **Next.js App Router** | One Next.js application; do not replace with Vite, plain React, or a separate Express app. |
 | Language | TypeScript | Strict types for domain objects, API contracts and service boundaries. |
 | UI | React Server and Client Components | Use Client Components only where browser interaction/state is required. |
-| Styling | CSS using the approved design-system tokens | Preserve the HTML/CSS reference; do not introduce an unapproved visual system. |
+| Styling | Application CSS derived directly from the attached HTML design-system file | Match the attached HTML; do not create a separate design-token file or visual specification. |
 | Server/API | **Next.js Route Handlers** under `app/api/**/route.ts` | No separate Express or Python backend for the MVP. |
 | Authentication | Firebase Authentication | Staff identity is verified server-side for protected operations. |
 | Database/realtime | Cloud Firestore | Facility-scoped records; restrictive Security Rules; realtime listeners only where needed. |
@@ -35,8 +35,8 @@ Official confirmation: https://blog.google/innovation-and-ai/technology/develope
 Before implementation, the agent must:
 
 1. Confirm the imported workspace is in Build Mode and its framework setting is **Next.js**.
-2. Inspect the repository. The current GitHub repository is a documentation/design-system baseline; it intentionally does not yet contain an application scaffold or `package.json`.
-3. Initialise the application as a genuine Next.js App Router + TypeScript project, preserving all existing project documentation and design-system files.
+2. Inspect the repository. The current GitHub repository is a documentation baseline; it intentionally does not yet contain an application scaffold or `package.json`.
+3. Initialise the application as a genuine Next.js App Router + TypeScript project, preserving all existing project documentation. The founder will attach the single HTML design reference directly to the AI Studio conversation.
 4. Verify the project uses Next.js scripts/dependencies and App Router files, and that the Build preview executes the Next.js app rather than a plain React/Vite scaffold.
 5. Verify Next.js Route Handlers, server-only environment secrets and Node.js runtime behaviour in the actual workspace before relying on them.
 6. Verify Firebase Authentication token verification and the Firestore server access pattern in Preview and the intended deployment environment.
