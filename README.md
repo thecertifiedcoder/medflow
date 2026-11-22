@@ -2,7 +2,7 @@
 
 **Working concept:** Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow.
 
-**Competition:** TCC Hackathon 2026 · **Current status:** Milestone 1A and 1B application foundation, Firebase integration, Firestore rules and staff authorization are implemented and verified in AI Studio Preview. Manual facility/staff seeding and interactive Google Sign-In verification remain outstanding. Patient intake, voice transcription and Gemini extraction are not yet implemented.
+**Competition:** TCC Hackathon 2026 · **Current status:** Milestones 1A (Next.js foundation), 1B (Firebase Auth + same-origin `/__/auth/*` proxy + server ID-token verification), 1C (UI design-system migration), and **Milestone 1D Phase 1D-1 (Neon PostgreSQL offline schema, SQL migrations, immutability triggers, and seed script under ADR `D-020`)** are implemented. Phases 1D-2/1D-3 (PostgreSQL Route Handlers/UI cutover, live Neon migration, and legacy Firestore cleanup), Milestone 2 (patient intake, voice transcription, Gemini extraction), and Milestone 3 (Evidence Integrity Engine) are not yet implemented.
 
 > **Safety notice:** This is a hackathon prototype, not a clinically validated medical device or emergency service. Do not use it for real patient care or enter real patient information or audio. Demonstrations must use synthetic data. MedFlow must not diagnose, prescribe, autonomously assign clinical urgency, or tell a patient that it is safe to wait.
 
@@ -32,16 +32,16 @@ The differentiator is not voice capture or a queue by itself. It is the traceabl
 
 ## Current implementation status
 
-Milestone 1A established the Next.js App Router application, design primitives, strict schemas, environment boundaries and verified Preview build.
+- **Milestone 1A (`Implemented and tested`):** Next.js App Router + TypeScript foundation, strict Zod extraction/intake schemas, server/public environment boundaries, and Preview build.
+- **Milestone 1B (`Implemented and tested`):** Firebase Authentication (Google Sign-In with same-origin `/__/auth/*` proxy), server-side `verifyIdToken(token)` verification, and transitional Firestore rules/wiring (preserved untouched until Phase 1D-3 decommissioning).
+- **Milestone 1C (`Implemented and tested`):** React UI rebuilt to match the single founder-attached HTML design system without TEWS/SATS clinical scoring (`D-019`).
+- **Milestone 1D — Phase 1D-1 (`Implemented and tested` — offline foundation):** Per ADR `D-020`, Neon PostgreSQL (`pg` + Drizzle ORM + Drizzle Kit) replaces Cloud Firestore as MedFlow's authoritative database while Firebase Auth remains the identity provider. Phase 1D-1 delivers the 6-table Drizzle schema (`facilities`, `staff_profiles`, `facility_memberships`, `patient_intakes`, `intake_evidence`, `audit_events`), composite tenant foreign keys, `intake_evidence` one-way `is_current` immutability trigger, DB-level 10-action-to-actor audit validation, staff-review consistency checks, canonical `demo-clinic-01`/`DEMO-CLINIC-01` facility identifiers, server-only `DATABASE_URL`/`DATABASE_URL_UNPOOLED` configuration, offline generated SQL migrations (`drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql`), idempotent founder-run CLI seed script (`src/db/seed.ts`), and offline invariant tests. No live Neon database operations were executed in Phase 1D-1.
 
-Milestone 1B connected the Google AI Studio Starter Tier Firebase project, deployed hardened Firestore rules, implemented Google Sign-In UI and server-side Firebase ID token signature/claim verification, and added staff authorization gates. Preview verification included typecheck, lint, production build, unit/security tests, HTTP checks and unauthenticated Firestore negative probes. Manual creation of the synthetic facility and first staff profile plus interactive Google Sign-In verification remain outstanding.
-
-Still outstanding:
-- Manual creation of the synthetic demo facility and first staff profile in Firebase Console.
-- Interactive Google Sign-In and authorized staff queue verification with those records.
-- Milestone 1C migration of the running React UI to match the attached HTML design system.
-- Milestone 2 patient typed/voice intake, transcription and staff-triggered Gemini extraction.
-- Milestone 3 Evidence Integrity Engine implementation and verification.
+Still outstanding (each requires separate founder approval):
+- **Phase 1D-2 (`Planned`):** PostgreSQL repository layer, server-authoritative Next.js Route Handlers, and UI cutover to visibility-aware polling of `/api/staff/intakes`.
+- **Phase 1D-3 (`Planned`):** Provision Neon and supply `DATABASE_URL` / `DATABASE_URL_UNPOOLED`, run `drizzle-kit migrate` and `src/db/seed.ts`, execute live end-to-end verification, and remove legacy Firestore artifacts.
+- **Milestone 2 (`Planned`):** Patient typed/voice intake, server-side Gemini transcription, durable PostgreSQL intake persistence, and staff-triggered server-side Gemini extraction.
+- **Milestone 3 (`Planned`):** Deterministic Evidence Integrity Engine, server-only `EVIDENCE_HMAC_SECRET` signing/verification, and staff evidence-review UI.
 
 No feature should be described as implemented until it exists in the running application and passes its acceptance tests.
 
@@ -51,13 +51,12 @@ No feature should be described as implemented until it exists in the running app
 - **Language:** TypeScript
 - **UI:** React components rebuilt to match the single founder-provided HTML design-system attachment
 - **Backend:** Next.js Route Handlers
-- **Authentication:** Firebase Authentication (Google Sign-In)
-- **Database/realtime:** Cloud Firestore on Google AI Studio Starter Tier, using the explicitly provisioned database ID and hardened Firestore Security Rules
-- **Server identity verification:** Firebase Admin Auth `verifyIdToken(token)` with revocation check disabled, because Starter Tier IAM does not permit the required revocation lookup
-- **AI:** Server-side Google Gemini API; live model calls are pending API key configuration and smoke tests
+- **Authentication (identity only):** Firebase Authentication (Google Sign-In + same-origin `/__/auth/*` proxy) with server-side `firebase-admin` `verifyIdToken(token)` signature/claim verification
+- **Database (authoritative under `D-020`):** Neon PostgreSQL via `pg` + Drizzle ORM + Drizzle Kit (`DATABASE_URL` for runtime, `DATABASE_URL_UNPOOLED` for direct migrations/seeding; strictly server-only). *(Legacy Firestore files remain in place only during Phase 1D-1 and are removed in Phase 1D-3.)*
+- **AI:** Server-side Google Gemini API; live model calls are pending Milestone 2
 - **Deployment target:** A verified Node.js host, with Google Cloud Run as the current candidate
 
-**Starter Tier constraint:** Do not use Firebase Admin Firestore reads/writes, service-account JSON keys or IAM workarounds. Patient intake writes and staff-authorised operations must follow the verified Firestore Web SDK + hardened Security Rules architecture documented in `docs/08_TECHNICAL_ARCHITECTURE.md`.
+**Security boundary:** Never expose `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, or `GEMINI_API_KEY` to browser bundles. Authentication alone grants zero clinical privileges; all staff access, facility scoping, and audited mutations are authorized server-side against PostgreSQL (`staff_profiles` + `facility_memberships`).
 
 ## Design and algorithm boundaries
 

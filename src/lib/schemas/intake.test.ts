@@ -82,7 +82,7 @@ test("ClinicalIntakeBriefSchema rejects forbidden clinical authority fields and 
 test("AuditEventSchema enforces three-way actorType rules (patient, staff, system)", () => {
   const patientEvent = AuditEventSchema.safeParse({
     id: "evt-1",
-    facilityId: "demo-facility-001",
+    facilityId: "demo-clinic-01",
     intakeId: "intake-1",
     actorType: "patient",
     action: "intake_created",
@@ -92,7 +92,7 @@ test("AuditEventSchema enforces three-way actorType rules (patient, staff, syste
 
   const systemEvent = AuditEventSchema.safeParse({
     id: "evt-2",
-    facilityId: "demo-facility-001",
+    facilityId: "demo-clinic-01",
     intakeId: "intake-1",
     actorType: "system",
     action: "ai_completed",
@@ -102,7 +102,7 @@ test("AuditEventSchema enforces three-way actorType rules (patient, staff, syste
 
   const staffEvent = AuditEventSchema.safeParse({
     id: "evt-3",
-    facilityId: "demo-facility-001",
+    facilityId: "demo-clinic-01",
     intakeId: "intake-1",
     actorType: "staff",
     actorUid: "uid-nurse-1",
@@ -119,7 +119,7 @@ test("AuditEventSchema enforces three-way actorType rules (patient, staff, syste
   // Patient or system MUST NOT carry nurse/doctor/admin staff roles
   const invalidPatientWithRole = AuditEventSchema.safeParse({
     id: "evt-4",
-    facilityId: "demo-facility-001",
+    facilityId: "demo-clinic-01",
     intakeId: "intake-1",
     actorType: "patient",
     actorRole: "nurse",
@@ -131,7 +131,7 @@ test("AuditEventSchema enforces three-way actorType rules (patient, staff, syste
   // Staff MUST provide actorUid and actorRole
   const invalidStaffWithoutRole = AuditEventSchema.safeParse({
     id: "evt-5",
-    facilityId: "demo-facility-001",
+    facilityId: "demo-clinic-01",
     intakeId: "intake-1",
     actorType: "staff",
     action: "priority_assigned",
@@ -142,7 +142,7 @@ test("AuditEventSchema enforces three-way actorType rules (patient, staff, syste
 
 test("CreateIntakeRequestSchema keeps patient age optional and blocks privileged client fields", () => {
   const withoutAge = CreateIntakeRequestSchema.safeParse({
-    facilityPublicCode: "DEMO-FACILITY",
+    facilityPublicCode: "DEMO-CLINIC-01",
     inputMode: "typed",
     confirmedNarrative: "My head has been paining me since yesterday evening.",
     idempotencyKey: "idem-key-12345678",
@@ -150,7 +150,7 @@ test("CreateIntakeRequestSchema keeps patient age optional and blocks privileged
   assert.equal(withoutAge.success, true);
 
   const withOptionalAge = CreateIntakeRequestSchema.safeParse({
-    facilityPublicCode: "DEMO-FACILITY",
+    facilityPublicCode: "DEMO-CLINIC-01",
     patientDisplayName: "T. Adebayo",
     age: 34,
     inputMode: "voice",
@@ -161,7 +161,7 @@ test("CreateIntakeRequestSchema keeps patient age optional and blocks privileged
   assert.equal(withOptionalAge.success, true);
 
   const withForbiddenPriority = CreateIntakeRequestSchema.safeParse({
-    facilityPublicCode: "DEMO-FACILITY",
+    facilityPublicCode: "DEMO-CLINIC-01",
     inputMode: "typed",
     confirmedNarrative: "My head has been paining me since yesterday evening.",
     idempotencyKey: "idem-key-12345678",

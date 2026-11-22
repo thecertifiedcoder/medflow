@@ -80,14 +80,14 @@ README must include:
 ## 5. Security hygiene
 
 Before public release:
-- scan for API keys and credentials;
-- ensure `.env` and service account files are gitignored;
+- scan for API keys, database URLs (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`), and credentials;
+- ensure `.env` and secret files are gitignored;
 - confirm `.env.example` contains placeholders only;
-- review Firestore rules;
+- review PostgreSQL schema constraints, composite foreign keys, immutability triggers (`drizzle/*.sql`), and `security_spec.md` (and remove transitional Firestore rules in Phase 1D-3);
 - verify public routes cannot read patient records;
-- verify staff endpoints check identity, role and facility;
+- verify staff endpoints check Firebase ID token identity, PostgreSQL active staff profile, role, and facility membership;
 - verify no raw audio/narrative content is logged;
-- use synthetic demo records only;
+- use synthetic demo records only (`demo-clinic-01` / `DEMO-CLINIC-01`);
 - document any remaining known security limitation.
 
 ## 6. AI disclosure

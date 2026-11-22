@@ -195,8 +195,20 @@ Read `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. The approved algorithm is dete
 
 ## C. Updated milestone boundaries
 
-- Milestone 1B is complete according to its Preview stop report. Founder still needs to complete manual facility/staff seeding and interactive Google Sign-In verification.
-- Milestone 1C is design-system migration only. Do not start it without separate founder approval.
-- Milestone 2 is patient typed/voice intake persistence and staff-triggered server-side Gemini extraction. Do not start it without separate founder approval.
-- Milestone 3 is the Evidence Integrity Engine implementation and verification. Do not start it without separate founder approval.
+- Milestones 1A, 1B, and 1C are complete and verified.
+- **Milestone 1D (Neon PostgreSQL migration, ADR `D-020`):**
+  - **Phase 1D-1 (PostgreSQL Foundation — offline):** Complete and verified (`src/db/*`, `drizzle/*`, `drizzle.config.ts`, canonical `demo-clinic-01`/`DEMO-CLINIC-01`, server-only `DATABASE_URL`/`DATABASE_URL_UNPOOLED`). No live Neon operations executed yet.
+  - **Phase 1D-2 (PostgreSQL repositories, Route Handlers & UI polling cutover):** Requires separate founder approval.
+  - **Phase 1D-3 (Live Neon migration, seeding, verification & legacy Firestore removal):** Requires Neon credentials and separate founder approval.
+- **Milestone 2** is patient typed/voice intake persistence and staff-triggered server-side Gemini extraction. Requires separate founder approval.
+- **Milestone 3** is the Evidence Integrity Engine implementation (`EVIDENCE_HMAC_SECRET` configured here) and verification. Requires separate founder approval.
 - Do not expand a milestone or claim completion without actual tests and a stop report.
+
+## D. Approved database architecture (ADR D-020 — Neon PostgreSQL)
+
+Neon PostgreSQL (`pg` + Drizzle ORM + Drizzle Kit) replaces Cloud Firestore as MedFlow's authoritative application database. **Firebase Authentication** (Google Sign-In + same-origin `/__/auth/*` proxy + server-side `verifyIdToken`) remains the identity provider.
+
+- All database connections and queries execute strictly server-side using `DATABASE_URL` (runtime pooled) and `DATABASE_URL_UNPOOLED` (direct migrations/seeding). Never expose either variable to client bundles.
+- Enforce composite `(intake_id, facility_id)` foreign keys on `intake_evidence` and `audit_events`, one-way `is_current: true -> false` immutability on `intake_evidence`, DB-level 10-action-to-actor validation on `audit_events`, and DB-level staff-review consistency on `patient_intakes`.
+- Use `demo-clinic-01` and `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`) as the sole canonical synthetic facility identifiers (`demo-facility-001` and `DEMO-FACILITY` are retired).
+- Defer `EVIDENCE_HMAC_SECRET` until Milestone 3.

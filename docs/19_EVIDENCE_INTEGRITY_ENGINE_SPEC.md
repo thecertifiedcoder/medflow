@@ -37,7 +37,7 @@ The differentiator is not merely that Gemini creates a structured summary. MedFl
 
 ### Output
 
-A validated AI draft plus server-generated evidence metadata for each evidence-bearing field. The output is attached only through the approved authenticated staff-triggered extraction flow in the Starter Tier architecture.
+A validated AI draft plus server-generated evidence metadata for each evidence-bearing field (`intake_evidence` rows and `ai_brief_provenance`). The output is generated and persisted server-side inside a PostgreSQL transaction only when triggered by an authenticated, active, facility-authorised staff session (`D-015`, `D-020`).
 
 ### Evidence states
 
@@ -115,17 +115,19 @@ Create a server-generated provenance envelope containing at minimum:
 - creation timestamp;
 - HMAC-SHA-256 signature.
 
-The HMAC key is server-only and configured through the platform's secrets mechanism. Never commit it or expose it to browser code. The signature proves that the envelope was produced by the trusted server key and binds it to a particular narrative and draft. It does not prove clinical correctness.
+The HMAC key (`EVIDENCE_HMAC_SECRET`) is strictly server-only and is intentionally deferred until **Milestone 3** when this engine is implemented. Never commit it, store it in PostgreSQL, or expose it to browser code. The signature proves that the envelope was produced by the trusted server key and binds it to a particular narrative and draft. It does not prove clinical correctness.
 
-### Step 6 — Persist through the approved Starter Tier boundary
+### Step 6 — Persist through the authoritative PostgreSQL boundary (`D-015`, `D-020`)
 
-- Extraction is triggered by an authenticated, active, facility-authorised staff session.
-- Gemini runs in the server-side Next.js Route Handler.
-- The server validates and signs the result.
-- The authorised staff client persists the AI draft/provenance using the already-approved Firestore Web SDK path and hardened rules, paired with the required append-only system audit event as specified in D-015 and the technical architecture.
+- Extraction is triggered only by an authenticated, active, facility-authorised staff session (verified server-side via Firebase ID token + PostgreSQL `staff_profiles` / `facility_memberships`).
+- Gemini, strict Zod validation, exact-substring verification, and HMAC provenance signing execute in the server-side Next.js Route Handler.
+- Inside a single server-side PostgreSQL transaction:
+  - Any superseded current `intake_evidence` rows for the intake transition strictly one-way from `is_current = true` to `is_current = false` (enforced by `intake_evidence_immutability_trg`; all other columns and DELETE remain forbidden).
+  - New immutable `intake_evidence` rows are inserted under the composite `(intake_id, facility_id)` foreign key to `patient_intakes`.
+  - `patient_intakes` updates `ai_status`, `ai_schema_version`, `ai_model`, `ai_brief`, and `ai_brief_provenance` without touching the immutable source narrative or any separate staff-reviewed brief.
+  - An append-only `audit_events` row (`actor_type = 'system'`, `action = 'ai_completed'` or `'ai_failed'`, `actor_uid IS NULL`, `actor_role IS NULL`) is inserted.
 - Never introduce unauthenticated post-submission AI writes.
-- Never use Firebase Admin Firestore writes, service-account keys or IAM workarounds on the Starter Tier project.
-- Preserve the original narrative and prior AI draft; do not silently overwrite reviewed data.
+- Preserve the original narrative, prior AI draft evidence history, and staff-reviewed copy as distinct records; never silently overwrite reviewed data.
 
 ## 5. Summary handling
 

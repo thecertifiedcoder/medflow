@@ -125,8 +125,8 @@ Do not state unsupported prevalence, mortality, productivity or market-size figu
 
 ### 5.5 Hackathon build assumptions
 
-- The MVP demonstrates one preconfigured facility.
-- Staff users are provisioned through the chosen Firebase setup; public users cannot self-assign staff roles.
+- The MVP demonstrates one preconfigured canonical synthetic facility (`demo-clinic-01` / `DEMO-CLINIC-01`).
+- Staff identities authenticate via Firebase Authentication (Google Sign-In), while staff profiles, roles, and facility memberships are provisioned authoritatively in Neon PostgreSQL (`D-020`); public users cannot self-assign staff roles.
 - Patient intake can be opened without staff authentication, but public users cannot list, read or modify existing intakes.
 - Demo records and test identities are fictional.
 
@@ -435,8 +435,8 @@ Never overwrite source narrative with AI or staff edits. Never put a clinical de
 
 - Patient pages should load quickly on a typical modern mobile browser.
 - Voice upload must show progress and avoid duplicate requests.
-- Queue should update within the five-second demo acceptance target on a stable test network.
-- Avoid unnecessary polling where a supported real-time listener is available.
+- Queue should update within the five-second demo acceptance target on a stable test network using authenticated, visibility-aware polling against PostgreSQL-backed staff Route Handlers (`D-020`).
+- Pause background polling when the browser tab is hidden to avoid unnecessary database load.
 - Do not claim a universal latency SLA based on one demo test.
 
 ### 10.3 Security and privacy
@@ -518,7 +518,7 @@ These issues must be resolved during technical and design planning without block
 
 1. Exact final product name and trademark/domain clearance — MedFlow remains a codename.
 2. Final Gemini audio endpoint/model, SDK, quotas and account access — verify in the actual project before coding voice integration.
-3. Final Firebase client/server division and Firestore rules — verify in AI Studio Build/Preview.
+3. ~~Final Firebase client/server division and Firestore rules~~ — **Resolved by ADR `D-020`:** Firebase Authentication handles staff identity with server-side `verifyIdToken`; Neon PostgreSQL (`pg` + Drizzle ORM + Drizzle Kit) is the authoritative database with server-side Next.js Route Handlers.
 4. Whether the staff-reviewed brief is implemented as a full editable structured copy or a smaller correction form — default recommendation: editable brief copy with original AI output preserved.
 5. Target demo device/browser for voice testing — select one and validate early.
 6. Exact permitted staff role actions — keep P0 simple: provisioned nurse/doctor accounts can review, correct, assign workflow priority and status.

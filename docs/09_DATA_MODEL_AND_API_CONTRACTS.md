@@ -9,85 +9,81 @@
 - Do not persist raw voice audio.
 - Avoid unnecessary personal data.
 
-## 2. Firestore collections
+## 2. Authoritative Neon PostgreSQL relational model (`D-020`)
 
-### `facilities/{facilityId}`
+MedFlow's authoritative relational schema is defined in `src/db/schema.ts` and materialized via Drizzle Kit SQL migrations (`drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql`).
 
-Minimal configured demo facility:
-- `name`
-- `timezone`
-- `createdAt`
-- `isDemo`
+### 2.1 `facilities`
 
-### `intakes/{intakeId}`
+Canonical synthetic demo facility: `id = "demo-clinic-01"`, `public_code = "DEMO-CLINIC-01"`, `name = "MedFlow Synthetic Demo Clinic"`. (`demo-facility-001` and `DEMO-FACILITY` are retired.)
 
-Suggested fields:
+- `id` (`text`, PK)
+- `public_code` (`text`, `UNIQUE NOT NULL`)
+- `name` (`text`, `NOT NULL`)
+- `timezone` (`text`, `NOT NULL`, default `'Africa/Lagos'`)
+- `active` (`boolean`, `NOT NULL`, default `true`)
+- `is_demo` (`boolean`, `NOT NULL`, default `true`)
+- `created_at` (`timestamptz`, `NOT NULL`, default `now()`)
+- `updated_at` (`timestamptz`, `NOT NULL`, default `now()`)
 
-```ts
-type Intake = {
-  id: string;
-  facilityId: string;
-  referenceCode: string;
-  patientDisplayName?: string; // synthetic/alias in hackathon demo
-  age?: number;
-  inputMode: "typed" | "voice";
-  transcriptRaw?: string;
-  confirmedNarrative: string;
-  transcriptConfirmedAt?: Timestamp;
-  transcriptionStatus: "not_applicable" | "succeeded" | "failed";
-  transcriptionModel?: string;
-  aiStatus: "queued" | "processing" | "succeeded" | "failed" | "needs_human_clarification";
-  aiSchemaVersion?: string;
-  aiBrief?: ClinicalIntakeBrief; // original validated AI draft; preserve after staff review
-  staffReview?: {
-    status: "not_reviewed" | "confirmed" | "corrected";
-    staffReviewedBrief?: ClinicalIntakeBrief; // separate human-reviewed copy
-    correctionNote?: string;
-    reviewedBy?: string;
-    reviewedAt?: Timestamp;
-  };
-  staffAssignedPriority: "unassigned" | "immediate_review" | "priority_review" | "routine_review";
-  workflowStatus: "new" | "in_review" | "awaiting_clarification" | "completed";
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  reviewedBy?: string;
-  reviewedAt?: Timestamp;
-  demoRecord: boolean;
-  idempotencyKey: string;
-};
-```
+### 2.2 `staff_profiles` & `facility_memberships`
 
-Use server timestamps. Validate all client fields. The server supplies `facilityId`, `referenceCode`, processing states, timestamps, and ID; never accept these as trusted client values.
+- `staff_profiles`: `firebase_uid` (`text`, PK), `email` (`text`, `UNIQUE NOT NULL`), `display_name` (`text`, `NOT NULL`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`.
+- `facility_memberships`: `id` (`uuid`, PK), `staff_uid` (`text`, FK -> `staff_profiles.firebase_uid` `ON DELETE RESTRICT`), `facility_id` (`text`, FK -> `facilities.id` `ON DELETE RESTRICT`), `role` (`staff_role`: `'nurse' | 'doctor' | 'admin'`), `active` (`boolean`, `NOT NULL`), `created_at`, `updated_at`, with `UNIQUE (staff_uid, facility_id)`.
 
-### `auditEvents/{eventId}`
+Never let a public client assign itself a staff profile or facility membership. Provisioning occurs outside public routes (e.g., founder-run CLI `src/db/seed.ts` in Phase 1D-3).
 
-```ts
-type AuditEvent = {
-  id: string;
-  facilityId: string;
-  intakeId: string;
-  actorType: "patient" | "staff" | "system";
-  actorUid?: string; // required when actorType === "staff"; omitted for patient/system
-  actorRole?: "nurse" | "doctor" | "admin"; // required when actorType === "staff"; forbidden for patient/system
-  action: "intake_created" | "transcript_confirmed" | "ai_completed" | "ai_failed" | "review_started" | "priority_assigned" | "priority_changed" | "status_changed" | "brief_confirmed" | "brief_corrected";
-  fromValue?: string;
-  toValue?: string;
-  reason?: string;
-  createdAt: Timestamp;
-};
-```
+### 2.3 `patient_intakes`
 
-Audit events are append-only. Never represent patient or automated system actions as nurses, doctors, or admins. Avoid storing full narrative content in audit metadata.
+Core columns and invariants:
+- Identity & source fields (protected as immutable post-insert by trigger `patient_intakes_immutability_trg`): `id` (`uuid`, PK), `facility_id` (`text`, FK -> `facilities.id`), `reference_code` (`text`), `patient_display_name` (`text?`), `age` (`integer?`, `0..130`), `input_mode` (`'typed' | 'voice'`), `transcript_raw` (`text?`), `confirmed_narrative` (`text`, `NOT NULL`), `confirmed_narrative_sha256` (`text?`), `transcript_confirmed_at` (`timestamptz?`), `transcription_status` (`'not_applicable' | 'succeeded' | 'failed'`), `transcription_model` (`text?`), `demo_record` (`boolean`), `idempotency_key` (`text`), `created_at` (`timestamptz`).
+- Composite unique constraints:
+  - `patient_intakes_id_facility_id_uq`: `UNIQUE (id, facility_id)` — referenced by composite foreign keys on `intake_evidence` and `audit_events`.
+  - `patient_intakes_facility_ref_uq`: `UNIQUE (facility_id, reference_code)`.
+  - `patient_intakes_facility_idempotency_uq`: `UNIQUE (facility_id, idempotency_key)`.
+- AI draft fields (staff-triggered only, `D-015`): `ai_status` (`'queued' | 'processing' | 'succeeded' | 'failed' | 'needs_human_clarification'`), `ai_schema_version` (`text?`), `ai_model` (`text?`), `ai_brief` (`jsonb?`), `ai_brief_provenance` (`jsonb?`).
+- Staff-review fields (separate from `ai_brief`): `staff_review_status` (`'not_reviewed' | 'confirmed' | 'corrected'`), `staff_reviewed_brief` (`jsonb?`), `staff_correction_note` (`text?`), `reviewed_by_uid` (`text?`, FK -> `staff_profiles.firebase_uid`), `reviewed_at` (`timestamptz?`).
+- **Staff-review consistency CHECK (`patient_intakes_staff_review_consistency_chk`):**
+  - `not_reviewed`: `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note` must ALL be `NULL`.
+  - `confirmed`: `reviewed_by_uid` and `reviewed_at` must be `NOT NULL`; `staff_correction_note` must be `NULL` (`staff_reviewed_brief` optional).
+  - `corrected`: `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note` must ALL be `NOT NULL`, with `char_length(btrim(staff_correction_note)) BETWEEN 3 AND 500`.
+- Staff workflow fields: `staff_assigned_priority` (`'unassigned' | 'immediate_review' | 'priority_review' | 'routine_review'`), `priority_reason` (`text?`), `workflow_status` (`'new' | 'in_review' | 'awaiting_clarification' | 'completed'`), `updated_at` (`timestamptz`).
 
-### `staff/{uid}`
+The server always supplies `facility_id` (resolved from `facilityPublicCode`), `reference_code`, initial processing states, timestamps, and ID; never accept privileged fields from public clients.
 
-Minimum staff profile:
-- `facilityIds: string[]`
-- `role: nurse | doctor | admin`
-- `displayName`
-- `active`
+### 2.4 `intake_evidence`
 
-For MVP, staff records may be provisioned manually in Firebase Console, but explain the process. Never let a public client assign itself a staff role.
+Stores deterministic server-derived field-level evidence verification rows (populated in Milestone 3):
+- `id` (`uuid`, PK), `intake_id` (`uuid`, `NOT NULL`), `facility_id` (`text`, `NOT NULL`), `extraction_run_id` (`uuid`, `NOT NULL`), `field_category` (`evidence_field_category`), `field_path` (`text`), `claim_value` (`text`), `certainty` (`'explicit' | 'unclear'`), `source_quote` (`text?`), `verification_status` (`'exact_quote_match' | 'missing_quote' | 'quote_not_found' | 'ambiguous_quote'`), `span_start` (`integer?`), `span_end` (`integer?`), `engine_version` (`text`), `narrative_sha256` (`text`), `is_current` (`boolean`, default `true`), `created_at` (`timestamptz`).
+- **Composite FK (`intake_evidence_intake_facility_fk`):** `FOREIGN KEY (intake_id, facility_id) REFERENCES patient_intakes (id, facility_id) ON DELETE RESTRICT` — guarantees every evidence row belongs to the same facility as its parent intake.
+- **Span CHECK (`intake_evidence_status_span_chk`):** `exact_quote_match` requires non-null `source_quote`, `span_start >= 0`, and `span_end > span_start`; all other statuses require `span_start IS NULL AND span_end IS NULL` (`missing_quote` also requires `source_quote IS NULL`).
+- **Active row uniqueness:** Partial unique index `intake_evidence_current_field_uq` on `(intake_id, field_path) WHERE is_current = true`.
+- **Immutability trigger (`intake_evidence_immutability_trg`):** Blocks all `DELETE` operations and blocks every `UPDATE` except a strictly controlled one-way `is_current` transition from `true` to `false` with zero other column changes.
+
+### 2.5 `audit_events`
+
+Append-only audit trail (`D-007` + DB-level action-to-actor enforcement):
+- `id` (`uuid`, PK), `facility_id` (`text`, `NOT NULL`), `intake_id` (`uuid`, `NOT NULL`), `actor_type` (`'patient' | 'staff' | 'system'`), `actor_uid` (`text?`, FK -> `staff_profiles.firebase_uid`), `actor_role` (`staff_role?`), `action` (`audit_action`), `from_value` (`text?`), `to_value` (`text?`), `reason` (`text?`), `created_at` (`timestamptz`).
+- **Composite FK (`audit_events_intake_facility_fk`):** `FOREIGN KEY (intake_id, facility_id) REFERENCES patient_intakes (id, facility_id) ON DELETE RESTRICT`.
+- **Append-only trigger (`audit_events_append_only_trg`):** Unconditionally rejects all `UPDATE` and `DELETE` operations.
+- **Actor identity CHECK (`audit_events_actor_identity_chk`):** `staff` requires both `actor_uid` and `actor_role`; `patient` and `system` forbid both.
+- **Mandatory reason CHECK (`audit_events_reason_required_chk`):** `priority_changed` and `brief_corrected` require non-null `reason` with `char_length(btrim(reason)) >= 3`.
+- **Complete 10-action-to-actor mapping CHECK (`audit_events_action_actor_mapping_chk`):**
+
+| Action | Required `actor_type` | `actor_uid` & `actor_role` | `reason` required? |
+|---|---|---|---|
+| `intake_created` | `patient` | Must be `NULL` | No |
+| `transcript_confirmed` | `patient` | Must be `NULL` | No |
+| `ai_completed` | `system` | Must be `NULL` | No |
+| `ai_failed` | `system` | Must be `NULL` | No |
+| `review_started` | `staff` | Must be `NOT NULL` | No |
+| `priority_assigned` | `staff` | Must be `NOT NULL` | No |
+| `priority_changed` | `staff` | Must be `NOT NULL` | Yes (≥ 3 trimmed chars) |
+| `status_changed` | `staff` | Must be `NOT NULL` | No |
+| `brief_confirmed` | `staff` | Must be `NOT NULL` | No |
+| `brief_corrected` | `staff` | Must be `NOT NULL` | Yes (≥ 3 trimmed chars) |
+
+Avoid storing full narrative content or raw audio in audit metadata.
 
 ## 3. Structured extraction type
 
@@ -133,7 +129,7 @@ Creates an intake from a typed or patient-confirmed narrative.
 Request:
 ```json
 {
-  "facilityPublicCode": "DEMO-FACILITY",
+  "facilityPublicCode": "DEMO-CLINIC-01",
   "patientDisplayName": "Demo Patient A",
   "age": 34,
   "inputMode": "voice",
@@ -143,7 +139,7 @@ Request:
 }
 ```
 
-Server must resolve facility code, validate content and create the record. Never accept arbitrary `facilityId`, priority, staff role, AI status or workflow status from the public client.
+Server must resolve facility code (`DEMO-CLINIC-01` → `demo-clinic-01`), validate content, and create the `patient_intakes` record plus `intake_created` (and `transcript_confirmed` if voice) `audit_events` row in one PostgreSQL transaction. Never accept arbitrary `facilityId`, priority, staff role, AI status or workflow status from the public client.
 
 ### `POST /api/intakes/transcribe`
 
@@ -155,7 +151,7 @@ Server must resolve facility code, validate content and create the record. Never
 
 ### `POST /api/intakes/{id}/extract`
 
-Trigger extraction after intake creation. The Gemini call must run server-side. If the validated result is persisted from the client because of AI Studio Preview constraints, treat it as an untrusted AI draft until a staff member reviews/confirms it; document the exact trust boundary. Any retry action must be staff-authorised, rate-limited and bounded.
+Trigger extraction only through an authenticated, active, facility-authorised staff session (`D-015`). The Gemini call, strict Zod validation, deterministic evidence verification (Milestone 3), and atomic PostgreSQL persistence (`ai_brief`, `ai_brief_provenance`, `intake_evidence`, and `system` `audit_events`) all execute server-side. Retries are staff-authorised, rate-limited, and bounded.
 
 ### `GET /api/staff/intakes`
 
@@ -222,9 +218,16 @@ Workflow:
 
 Priority is an independent staff-controlled field. Any priority change requires an audit record. Do not allow direct transition to `completed` from a public patient request.
 
-## 6. Firestore indexes and queries
+## 6. PostgreSQL indexes and queries
 
-Document the indexes actually required by the implementation. Avoid unbounded collection reads. Paginate historical records. The active queue should be facility-scoped and limited to recent/open items.
+Defined in `src/db/schema.ts` and `drizzle/0000_initial_medflow_schema.sql`:
+- `patient_intakes_facility_queue_idx` on `(facility_id, workflow_status, staff_assigned_priority, created_at)` for bounded, facility-scoped active queue reads.
+- `patient_intakes_facility_created_idx` on `(facility_id, created_at)`.
+- `intake_evidence_intake_current_idx` on `(intake_id, is_current)` plus partial unique index `intake_evidence_current_field_uq` on `(intake_id, field_path) WHERE is_current = true`.
+- `audit_events_intake_created_idx` on `(intake_id, created_at)` and `audit_events_facility_created_idx` on `(facility_id, created_at)`.
+- `facility_memberships_staff_active_idx` and `facility_memberships_facility_idx` for fast server-side RBAC resolution.
+
+Avoid unbounded table scans; paginate historical/completed records and always filter by verified `facility_id`.
 
 ## 7. Validation and security requirements
 
@@ -283,7 +286,7 @@ The server-generated `aiBriefProvenance` envelope must bind the draft to the sou
 - creation timestamp;
 - HMAC-SHA-256 signature generated with a server-only secret.
 
-The HMAC secret is never stored in Firestore, exposed to the browser or committed. Signature verification proves envelope integrity and origin under the server key, not clinical correctness. This design must remain compatible with D-014/D-015: no Firebase Admin Firestore writes or IAM bypasses on Starter Tier; extraction is staff-triggered and draft persistence follows the approved staff-authorised Web SDK + Firestore Rules path with its required audit event.
+The HMAC secret (`EVIDENCE_HMAC_SECRET`, intentionally deferred until Milestone 3) is strictly server-only — never stored in the database, exposed to the browser, or committed. Signature verification proves envelope integrity and origin under the server key, not clinical correctness. Under `D-015` and `D-020`, extraction is triggered only by an authenticated, active, facility-authorised staff session; the Next.js Route Handler writes `ai_brief`, `ai_brief_provenance`, `intake_evidence` rows (protected by composite `(intake_id, facility_id)` FK and one-way `is_current` immutability trigger), and the append-only `system` audit event inside a single PostgreSQL transaction.
 
 ### Summary boundary
 

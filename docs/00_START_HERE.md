@@ -3,7 +3,7 @@
 **Project codename:** MedFlow  
 **Working positioning:** Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow  
 **Competition:** TCC Hackathon 2026  
-**Documentation status:** Milestone 1B implementation verified in AI Studio Preview; manual facility/staff seeding and interactive Google Sign-In verification remain founder actions. Milestone 2 is not implemented.
+**Documentation status:** Milestones 1A, 1B, 1C, and **Milestone 1D Phase 1D-1 (Neon PostgreSQL offline foundation, ADR `D-020`)** are implemented. Phases 1D-2/1D-3 (API/UI cutover, live Neon migration, Firestore cleanup), Milestone 2, and Milestone 3 are not yet implemented.
 
 ## 1. What this project is
 
@@ -90,4 +90,8 @@ Do not mark a feature complete because AI Studio generated code for it. It must 
 
 ## 8. Current verified milestone state
 
-Milestone 1A and Milestone 1B have been implemented and verified in the AI Studio Preview according to their stop reports. Firebase Starter Tier project `daring-brace-jw1xt` is connected, hardened Firestore rules are deployed, and unauthenticated security probes passed. Manual creation of the synthetic facility and administrator profile plus interactive Google Sign-In verification remain outstanding. Patient voice/text intake, transcription and Gemini extraction workflows are not yet implemented. Do not describe them as live.
+- **Milestone 1A (Implemented and verified):** Next.js App Router + TypeScript foundation, strict Zod schemas, environment boundaries, and Preview build.
+- **Milestone 1B (Implemented and verified):** Firebase Authentication (Google Sign-In + same-origin `/__/auth/*` proxy), server-side `verifyIdToken(token)` session verification, and transitional Firestore rules/setup (kept active only until Phase 1D-3 decommissioning).
+- **Milestone 1C (Implemented and verified):** Full React UI migration to match the single founder-attached HTML design system, preserving clinical safety exclusions (`D-019`).
+- **Milestone 1D — Phase 1D-1 (Implemented — offline foundation):** Per ADR `D-020`, Neon PostgreSQL (`pg` + Drizzle ORM + Drizzle Kit) replaces Cloud Firestore as MedFlow's authoritative database while Firebase Auth remains the identity provider. Phase 1D-1 delivered `src/db/schema.ts`, `src/db/invariants.ts`, `src/db/index.ts`, `src/db/seed.ts`, `drizzle.config.ts`, offline SQL migrations (`drizzle/0000_initial_medflow_schema.sql`, `drizzle/0001_immutability_triggers.sql`), canonical `demo-clinic-01`/`DEMO-CLINIC-01` facility identifiers, and offline invariant tests. No live Neon database operations have been run yet.
+- **Pending separate founder approval:** Phase 1D-2 (PostgreSQL repositories, Route Handlers & UI polling cutover), Phase 1D-3 (live Neon migration/seeding & legacy Firestore removal once Neon credentials are supplied), Milestone 2 (patient typed/voice intake, transcription & staff-triggered Gemini extraction), and Milestone 3 (Evidence Integrity Engine & `EVIDENCE_HMAC_SECRET`). Do not describe pending milestones as live.

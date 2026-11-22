@@ -102,7 +102,7 @@ Prepare the following in the public repository:
 - screenshots of patient, voice review and staff flows;
 - clear installation instructions;
 - test commands and test output summary;
-- security rules and explanation;
+- database constraints/triggers and authorization explanation (`security_spec.md`, `drizzle/*.sql`);
 - AI disclosure;
 - sprint feature log;
 - known limitations;
@@ -158,3 +158,19 @@ These tests are required before the algorithm is described as implemented:
 - [ ] No TEWS/SATS score, clinical classification, treatment-time target or autonomous urgency behaviour is present.
 
 The engine's checks establish quote location and provenance only. They are not clinical validation or proof that an extracted interpretation is correct.
+
+## 9. Milestone 1D PostgreSQL schema, invariant and migration tests (`D-020`)
+
+### Phase 1D-1 (offline foundation — verified before live DB provisioning)
+- [ ] All 6 tables (`facilities`, `staff_profiles`, `facility_memberships`, `patient_intakes`, `intake_evidence`, `audit_events`) and 12 enums are generated cleanly into `drizzle/0000_initial_medflow_schema.sql`.
+- [ ] Composite foreign keys enforce `intake_evidence (intake_id, facility_id)` and `audit_events (intake_id, facility_id)` match parent `patient_intakes (id, facility_id)`.
+- [ ] `intake_evidence_immutability_trg` rejects `DELETE` and rejects every `UPDATE` except one-way `is_current: true -> false` with zero other column changes.
+- [ ] `audit_events_action_actor_mapping_chk` enforces the complete 10-action-to-actor mapping (`patient` / `system` / `staff`) and mandatory `reason` on `priority_changed` and `brief_corrected`.
+- [ ] `patient_intakes_staff_review_consistency_chk` enforces internal consistency across `staff_review_status`, `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note`.
+- [ ] `demo-clinic-01` and `DEMO-CLINIC-01` are the sole canonical synthetic facility identifiers (`demo-facility-001` and `DEMO-FACILITY` retired).
+- [ ] `DATABASE_URL` (runtime) and `DATABASE_URL_UNPOOLED` (migrations) remain strictly server-only; `EVIDENCE_HMAC_SECRET` remains deferred until Milestone 3.
+
+### Phases 1D-2 & 1D-3 (live Neon verification — pending founder approval & Neon credentials)
+- [ ] `drizzle-kit migrate` and idempotent `src/db/seed.ts` succeed cleanly against founder-provisioned Neon PostgreSQL.
+- [ ] Live SQL negative tests confirm PostgreSQL rejects cross-facility `intake_evidence`/`audit_events` inserts, `intake_evidence` field edits or `false -> true` flips, spoofed `audit_events` action/actor pairs, and inconsistent staff-review updates.
+- [ ] Authenticated staff session, facility-scoped queue polling, and cross-facility isolation pass end-to-end against Neon PostgreSQL.

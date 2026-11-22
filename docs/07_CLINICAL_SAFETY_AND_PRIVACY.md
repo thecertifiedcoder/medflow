@@ -58,19 +58,19 @@ For hackathon scope, use human-assigned workflow priority only.
 For MVP, collect only what is needed to demonstrate intake and staff review. Avoid full address, identity numbers, insurance details, next-of-kin, or unrelated medical history.
 
 - Do not persist raw audio.
-- Do not log transcript/narrative content or secrets.
-- Do not store API keys in frontend code or Firestore.
+- Do not log transcript/narrative content, database URLs, or secrets.
+- Do not store API keys or secrets in frontend code or the PostgreSQL database.
 - Provide a demo-data reset for authorised staff.
 - Use short-lived, purpose-limited processing for audio.
 
 ## 8. Access control
 
-- Patient intake may be publicly accessible only for creating a new intake under a configured demo facility; it must not expose existing records.
-- Staff dashboard requires authentication.
-- Every record and query must be scoped to `facilityId`.
-- Staff role is verified server-side or through validated Firebase claims/rules; never trust a role supplied by the client.
+- Patient intake may be publicly accessible only for creating a new intake under the configured canonical demo facility (`DEMO-CLINIC-01` → `demo-clinic-01`); it must not expose existing records.
+- Staff dashboard requires Firebase Authentication (Google Sign-In) plus an active, server-verified PostgreSQL `staff_profiles` and `facility_memberships` record.
+- Every record, query, and composite child foreign key (`intake_evidence`, `audit_events`) must be scoped to `facility_id`.
+- Staff role and facility membership are verified server-side from authoritative PostgreSQL records; never trust a role or `facilityId` supplied by the client.
 - Patients must not access other patient records by changing an ID in the URL.
-- Audit events must not be writable/deletable by ordinary client users.
+- Audit events are strictly append-only in PostgreSQL (`audit_events_append_only_trg`) with DB-enforced action-to-actor validation and cannot be modified or deleted by clients or application users.
 
 ## 9. Privacy and external AI processing
 

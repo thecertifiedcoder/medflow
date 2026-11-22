@@ -1,38 +1,61 @@
-# MedFlow Firestore Security Specification (Phase 0 TDD)
+# MedFlow Security & Database Invariant Specification
+
+**Architecture Decisions Enforced:** `D-006`, `D-007`, `D-008`, `D-009`, `D-015` (Option 1B), `D-016` (Option 2B), `D-020` (Neon PostgreSQL replacing Cloud Firestore; Firebase Authentication retained for identity)  
+**Canonical Synthetic Facility:** `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`) — `demo-facility-001` and `DEMO-FACILITY` are retired.
+
+---
+
+## Part A — Authoritative Neon PostgreSQL Security & Invariant Specification (`D-020`, Phase 1D-1+)
+
+Defined in `src/db/schema.ts`, `src/db/invariants.ts`, `drizzle/0000_initial_medflow_schema.sql`, and `drizzle/0001_immutability_triggers.sql`.
+
+### A.1 Server-Only Trust & Credential Boundaries
+
+1. **Identity vs. Authorization Split:** Firebase Authentication (`daring-brace-jw1xt`, Google Sign-In via same-origin `/__/auth/*` proxy) proves user identity only. Protected Next.js Route Handlers verify `Authorization: Bearer <idToken>` server-side via `verifyIdToken(token)`, require `email_verified === true`, and authorize every operation against PostgreSQL `staff_profiles`, `facility_memberships`, and `facilities`.
+2. **Zero Browser Database Exposure:** `src/db/index.ts` enforces `assertServerRuntime()` and connects strictly via server-only `DATABASE_URL` (pooled Neon runtime, TLS `rejectUnauthorized: true`). Direct schema migrations (`drizzle.config.ts`) and founder-run CLI seeding (`src/db/seed.ts`) use server-only `DATABASE_URL_UNPOOLED`. Neither variable is ever prefixed with `NEXT_PUBLIC_` or exposed to client bundles.
+3. **No Client Self-Provisioning (Option 2B):** Ordinary clients have no API path to create or modify `facilities`, `staff_profiles`, or `facility_memberships`. Initial provisioning is performed exclusively through founder-run `src/db/seed.ts` (with optional validated `SEED_ADMIN_*` environment variables and zero hardcoded personal credentials).
+4. **Deferred Provenance Signing Secret:** `EVIDENCE_HMAC_SECRET` is intentionally deferred until Milestone 3 (Evidence Integrity Engine implementation).
+
+### A.2 Database-Enforced Clinical Safety Invariants (SQL Constraints & Triggers)
+
+| # | Invariant | Database Mechanism | Guarantee |
+|---|---|---|---|
+| **PG-01** | **Cross-Facility Child Isolation (Composite FKs)** | `patient_intakes_id_facility_id_uq` (`UNIQUE (id, facility_id)`) referenced by `intake_evidence_intake_facility_fk` and `audit_events_intake_facility_fk` (`ON DELETE RESTRICT`) | Every `intake_evidence` and `audit_events` row is guaranteed at the database layer to have the exact same `facility_id` as its parent `patient_intakes` row. |
+| **PG-02** | **Immutable Patient Source Narrative** | `BEFORE UPDATE` trigger `patient_intakes_immutability_trg` | Blocks any `UPDATE` modifying `id`, `facility_id`, `reference_code`, `idempotency_key`, `demo_record`, `patient_display_name`, `age`, `input_mode`, `transcription_status`, `transcription_model`, `transcript_raw`, `confirmed_narrative`, `confirmed_narrative_sha256`, `transcript_confirmed_at`, or `created_at`. |
+| **PG-03** | **Immutable `intake_evidence` with One-Way `is_current` Archival** | `BEFORE UPDATE OR DELETE` trigger `intake_evidence_immutability_trg` + partial unique index `intake_evidence_current_field_uq` (`WHERE is_current = true`) + `intake_evidence_status_span_chk` | Blocks all `DELETE` operations and blocks every `UPDATE` except a strictly controlled one-way transition `is_current: true -> false` with zero changes to any other column (`id`, `intake_id`, `facility_id`, `extraction_run_id`, `field_category`, `field_path`, `claim_value`, `certainty`, `source_quote`, `verification_status`, `span_start`, `span_end`, `engine_version`, `narrative_sha256`, `created_at`). Re-activating (`false -> true`) is rejected. |
+| **PG-04** | **Append-Only Audit Trail** | `BEFORE UPDATE OR DELETE` trigger `audit_events_append_only_trg` | Unconditionally raises an exception on any `UPDATE` or `DELETE` against `audit_events`. |
+| **PG-05** | **3-Actor Identity & Complete 10-Action-to-Actor Mapping (`D-007`)** | `audit_events_actor_identity_chk`, `audit_events_action_actor_mapping_chk`, `audit_events_reason_required_chk` | Enforces exact actor-to-action pairing in PostgreSQL: `patient` → `{intake_created, transcript_confirmed}` (`actor_uid`/`actor_role` `NULL`); `system` → `{ai_completed, ai_failed}` (`actor_uid`/`actor_role` `NULL`); `staff` → `{review_started, priority_assigned, priority_changed, status_changed, brief_confirmed, brief_corrected}` (`actor_uid`/`actor_role` `NOT NULL`). `priority_changed` and `brief_corrected` require trimmed `reason` ≥ 3 chars. |
+| **PG-06** | **Internal Staff-Review Consistency** | `patient_intakes_staff_review_consistency_chk` | `not_reviewed` requires `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, `staff_correction_note` ALL `NULL`; `confirmed` requires `reviewed_by_uid` & `reviewed_at` `NOT NULL` and `staff_correction_note` `NULL`; `corrected` requires `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note` (3–500 trimmed chars) ALL `NOT NULL`. |
+| **PG-07** | **Staff-Only AI Extraction Persistence (Option 1B)** | Server-side Route Handler authorization + atomic PostgreSQL transaction | Unauthenticated clients can only submit new intakes (`workflow_status = 'new'`, `staff_assigned_priority = 'unassigned'`, `ai_status = 'queued'`, `staff_review_status = 'not_reviewed'`). Only authenticated, active, facility-authorized staff can trigger extraction and persist `ai_brief`, `ai_brief_provenance`, `intake_evidence`, and `system` `audit_events`. |
+
+### A.3 PostgreSQL Mapping of the "Dirty Dozen" Adversarial Controls
+
+| # | Attack Class | PostgreSQL + Route Handler Gate That Rejects It |
+|---|---|---|
+| **DD-01** | Self-provision staff profile / membership | No public write route to `staff_profiles`/`facility_memberships`; CLI-only seeding (`src/db/seed.ts`). |
+| **DD-02** | Staff PII enumeration | `/api/staff/session` returns only the authenticated caller's own profile & active memberships; no staff-list route. |
+| **DD-03** | Unauthenticated queue / record read | Staff Route Handlers require verified Firebase Bearer token + active PostgreSQL `staff_profiles` & `facility_memberships`. |
+| **DD-04** | Cross-facility read or child attachment | Queries filter strictly by verified `facility_memberships.facility_id`; composite FKs `intake_evidence_intake_facility_fk` & `audit_events_intake_facility_fk` block mismatched child rows at the DB layer. |
+| **DD-05** | Shadow field / AI triage injection on create | Strict Zod `.strict()` schemas reject unknown/forbidden keys; server hardcodes initial `workflow_status`, `staff_assigned_priority`, `ai_status`, and `staff_review_status`. |
+| **DD-06** | Orphan intake without patient audit event | `POST /api/intakes` wraps `patient_intakes` insert and `audit_events` (`patient` / `intake_created`) insert in a single PostgreSQL transaction. |
+| **DD-07** | Unauthenticated post-submit AI draft write | `POST /api/intakes/[intakeId]/extract` requires verified active facility staff (`D-015`). |
+| **DD-08** | Overwriting immutable original narrative | Trigger `patient_intakes_immutability_trg` rejects any `UPDATE` altering `confirmed_narrative` or source identity columns. |
+| **DD-09** | Priority change or brief correction without reason / inconsistent review state | `audit_events_reason_required_chk` and `patient_intakes_staff_review_consistency_chk` reject missing/short reasons or inconsistent staff-review columns at the DB layer. |
+| **DD-10** | Audit tampering or `intake_evidence` tampering/deletion | `audit_events_append_only_trg` blocks all `UPDATE`/`DELETE` on `audit_events`; `intake_evidence_immutability_trg` blocks `DELETE` and any `UPDATE` other than one-way `is_current: true -> false`. |
+| **DD-11** | Audit actor/action spoofing (`D-007`) | `audit_events_actor_identity_chk` and `audit_events_action_actor_mapping_chk` reject mismatched actor/action pairs (e.g., `staff` logging `ai_completed`, or `system` logging `priority_changed`) at the DB layer. |
+| **DD-12** | Unverified email / invalid workflow transition / oversized IDs | Server enforces `decodedToken.email_verified === true`, explicit Zod UUID/bounds validation, and `isValidWorkflowTransition(...)`. |
+
+---
+
+## Part B — Transitional Firestore Security Specification (Active During Phase 1D-1 Only; Decommissioned in Phase 1D-3)
 
 **Project:** `daring-brace-jw1xt` (Starter Tier, `europe-west3`)  
 **Database:** `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`  
-**Decisions Enforced:** `D-006`, `D-007`, `D-008`, `D-009`, `D-014`, `D-015` (Option 1B), `D-016` (Option 2B)
+**Status:** Preserved untouched during Phase 1D-1 while PostgreSQL migrations are built offline. Scheduled for removal in Phase 1D-3 after live Neon cutover.
 
----
+### B.1 Transitional Firestore Invariants
 
-## 1. Non-Negotiable Data Invariants
-
-1. **Zero-Trust Default Deny:** Any unmatched collection or operation is explicitly denied (`match /{document=**} { allow read, write: if false; }`).
-2. **No Client Facility or Staff Self-Provisioning (Option 2B):** `/facilities/{facilityId}` and `/staff/{uid}` deny all client `create`, `update`, and `delete` operations with **no** email-based bootstrap bypass. Authentication alone never grants staff privileges.
-3. **Staff PII Isolation:** `/staff/{uid}` allows `get` only when `request.auth != null && request.auth.token.email_verified == true && request.auth.uid == uid`. `list` is always denied to prevent enumerating staff profiles or emails.
-4. **Patient Privacy & Facility Isolation:** Unauthenticated visitors have zero `get` or `list` access to `/intakes/{intakeId}` or `/intakes/{intakeId}/auditEvents/{eventId}`. Staff reads and list queries strictly enforce `resource.data.facilityId in staff.facilityIds` with `staff.active == true` and `email_verified == true`.
-5. **Write-Only Public Intake Creation with Atomic Audit:** Public intake `create` requires an existing active `/facilities/{facilityId}`, exact allowlisted keys, optional `age`/`patientDisplayName`, locked initial states (`workflowStatus == "new"`, `staffAssignedPriority == "unassigned"`, `aiStatus == "queued"`, `staffReviewStatus == "not_reviewed"`), `request.time` timestamps, and an atomic `existsAfter(...)` patient `intake_created` audit event.
-6. **Immutable Original Patient Narrative:** After creation, `confirmedNarrative`, `transcriptRaw`, `facilityId`, `referenceCode`, `inputMode`, `transcriptionStatus`, `idempotencyKey`, `initialAuditEventId`, `patientDisplayName`, `age`, and `createdAt` can **never** be modified by any client (including admins).
-7. **Staff-Only AI Draft Persistence (Option 1B):** Unauthenticated post-submission writes to `/intakes/{intakeId}` are strictly forbidden. Attaching `aiBrief` / `aiBriefProvenance` is an explicit staff-only update action that cannot touch `confirmedNarrative`, `staffAssignedPriority`, `workflowStatus`, or `staffBrief`.
-8. **Append-Only 3-Actor Audit Trail (`D-007`):** `/intakes/{intakeId}/auditEvents/{eventId}` forbids all `update` and `delete`. `patient` events are allowed only atomically on initial intake creation (`!exists(parent) && existsAfter(parent)` with no `actorUid`/`actorRole`). `staff` events require active facility staff with `actorUid == request.auth.uid`, `actorRole == staff.role`, and mandatory `reason` on `priority_changed`. `system` events require active facility staff (Option 1B) with no `actorUid`/`actorRole`.
-9. **Terminal Workflow Locking:** Once `workflowStatus == "completed"`, non-admin staff cannot mutate the intake.
-
----
-
-## 2. The "Dirty Dozen" Adversarial Payloads (Must Return `PERMISSION_DENIED`)
-
-| # | Attack Class | Target Path & Operation | Malicious Synthetic Payload / Context | Rule Gate That Rejects It |
-|---|---|---|---|---|
-| **DD-01** | **Privilege Escalation (Self-Provision Staff)** | `CREATE /staff/attacker-uid` (signed-in Google user) | `{ uid: "attacker-uid", email: "attacker@example.com", displayName: "Fake Nurse", role: "admin", facilityIds: ["demo-clinic-01"], active: true, createdAt: SERVER_TIME }` | `/staff/{uid}` `allow create: if false;` (Option 2B). |
-| **DD-02** | **Staff PII Enumeration** | `LIST /staff` or `GET /staff/other-nurse-uid` (signed-in active nurse) | Query all docs in `/staff` or read another nurse's profile | `allow list: if false;` and `allow get` requires `request.auth.uid == uid`. |
-| **DD-03** | **Unauthenticated Queue / Record Read** | `GET /intakes/intake-001` or `LIST /intakes` (unauthenticated) | Patient attempts to read back own or another patient's intake | `allow get, list` requires `isActiveStaffForFacility(...)`. |
-| **DD-04** | **Cross-Facility Data Leak** | `GET /intakes/facility-b-intake` (active nurse in `demo-clinic-01` only) | Nurse reads or queries `facilityId == "clinic-b"` | `existing().facilityId in getStaffProfile().data.facilityIds` fails. |
-| **DD-05** | **Shadow Field / AI Triage Injection on Create** | `CREATE /intakes/intake-shadow` (unauthenticated) | Valid create payload + `diagnosis: "migraine"`, `staffAssignedPriority: "immediate_review"`, or `aiBrief: {...}` | `isValidIntakeCreate` enforces `keys().hasOnly(...)` and `staffAssignedPriority == "unassigned"`, `aiStatus == "queued"`. |
-| **DD-06** | **Orphan Intake Without Atomic Patient Audit** | `CREATE /intakes/intake-no-audit` (unauthenticated, single write without batch) | Valid intake payload without committing `/intakes/intake-no-audit/auditEvents/{initialAuditEventId}` in same batch | `existsAfter(.../auditEvents/$(incoming().initialAuditEventId))` fails. |
-| **DD-07** | **Unauthenticated Post-Submit AI Draft Tampering (Option 1B)** | `UPDATE /intakes/intake-001` (unauthenticated) | `{ aiStatus: "succeeded", aiBrief: { ... }, updatedAt: SERVER_TIME }` | `allow update` requires `isSignedIn() && isVerifiedEmail() && isActiveStaffForFacility(...)`. |
-| **DD-08** | **Overwriting Immutable Original Patient Narrative** | `UPDATE /intakes/intake-001` (active nurse in same facility) | `{ confirmedNarrative: "Edited patient statement", updatedAt: SERVER_TIME, lastAuditEventId: "evt-2" }` | `affectedKeys().hasOnly(...)` action allowlists exclude `confirmedNarrative` + explicit `incoming().confirmedNarrative == existing().confirmedNarrative`. |
-| **DD-09** | **Priority Change Without Reason or Atomic Audit** | `UPDATE /intakes/intake-001` (active nurse changing `priority_review -> routine_review`) | `{ staffAssignedPriority: "routine_review", updatedAt: SERVER_TIME, lastAuditEventId: "evt-missing" }` (missing `priorityReason` or missing batch audit doc) | Priority action enforces non-empty `priorityReason` on reassignment and `existsAfter(.../auditEvents/$(incoming().lastAuditEventId))`. |
-| **DD-10** | **Audit Tampering / Deletion** | `UPDATE` or `DELETE /intakes/intake-001/auditEvents/evt-1` (active admin) | Modify `reason` or delete audit history | `allow update, delete: if false;` on `auditEvents`. |
-| **DD-11** | **Audit Actor Spoofing (`D-007`)** | `CREATE /intakes/intake-001/auditEvents/evt-spoof` (active nurse) | `{ actorType: "staff", actorUid: "other-doctor-uid", actorRole: "doctor", action: "priority_assigned", ... }` or `actorType: "system"` with `actorRole: "nurse"` | `actorUid == request.auth.uid && actorRole == getStaffProfile().data.role`; non-staff events forbid `actorUid` & `actorRole`. |
-| **DD-12** | **ID Poisoning / Unverified Email / Invalid Status Jump** | `CREATE /intakes/<200-char-id>` OR `UPDATE` by unverified email OR jumping `new -> completed` | Oversized ID / `email_verified: false` / skipping `in_review` to `completed` | `isValidId(intakeId)` (`<= 128` + regex), `isVerifiedEmail()`, and `isValidWorkflowTransition(...)` reject all three. |
+1. **Zero-Trust Default Deny:** `match /{document=**} { allow read, write: if false; }`.
+2. **No Client Facility or Staff Self-Provisioning (Option 2B):** `/facilities/{facilityId}` and `/staff/{uid}` deny all client `create`, `update`, and `delete` operations.
+3. **Staff PII Isolation:** `/staff/{uid}` allows `get` only for `request.auth.uid == uid` with verified email; `list` is denied.
+4. **Facility-Scoped Staff Reads & Atomic Audited Mutations:** All reads and updates require active facility membership, immutable original patient narrative, staff-only AI draft persistence (Option 1B), and append-only `auditEvents`.

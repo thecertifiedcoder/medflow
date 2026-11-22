@@ -128,34 +128,51 @@ Google's official announcement confirms that Build Mode supports Next.js and tha
 - [ ] Demo path remains repeatable.
 
 
-## 8. Updated milestone sequence after Milestone 1B (founder-approved 2026-11-22)
+## 8. Updated milestone sequence (founder-approved 2026-11-22)
 
-Milestone 1A and Milestone 1B are implemented and verified in AI Studio Preview according to their stop reports. The founder still needs to manually create the synthetic facility and staff profile in Firebase Console and complete the interactive Google Sign-In/authorized queue check. Do not claim those founder-only checks are complete until observed.
+Milestone 1A (Next.js App Router scaffold), Milestone 1B (Firebase Auth + same-origin `/__/auth/*` proxy + server-side `verifyIdToken` + transitional Firestore setup), and Milestone 1C (UI migration to the founder-attached HTML design system) are implemented and verified.
 
-### Milestone 1C — Replace the existing UI design system (requires separate approval)
+Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces Cloud Firestore as MedFlow's authoritative database while **Firebase Authentication** remains the identity provider.
 
-- The founder must attach the complete standalone HTML design-system file directly to the AI Studio conversation. If it is not attached, stop and request it.
-- Treat that one HTML file as the only visual source of truth. Do not create a separate design-tokens file, extracted CSS token sheet, design-system specification or duplicate reference.
-- Remove obsolete design-system files and references from the repository, then rebuild the existing React components to match the attached HTML's visual language and responsive layouts.
-- Preserve the existing Next.js routes, Firebase setup, deployed Firestore rules, staff authorization and all approved product behaviour.
-- Do not iframe the HTML or copy its demo JavaScript. Its controls are visual examples, not working integrations.
-- Do not implement any adult TEWS/SATS scoring, clinical classifications, time targets, vital-sign scoring or AI red-flag prioritisation shown in the HTML. Those features remain excluded by D-019.
-- Run typecheck, lint, production build and desktop/mobile browser verification. Stop and provide a changed-file report and screenshots of the actual app.
-- Do not start Milestone 2 in the same authorization.
+### Milestone 1D — Neon PostgreSQL Migration (3 separately approved phases)
+
+#### Phase 1D-1 — PostgreSQL Foundation (offline; implemented and verified)
+- Install `pg`, `drizzle-orm`, `@types/pg`, and `drizzle-kit`.
+- Author Drizzle schema (`src/db/schema.ts`), invariants (`src/db/invariants.ts`), server-only runtime connector (`src/db/index.ts` using `DATABASE_URL`), Drizzle Kit config (`drizzle.config.ts` using `DATABASE_URL_UNPOOLED`), and idempotent founder-run CLI seed (`src/db/seed.ts`).
+- Generate and verify offline SQL migrations (`drizzle/0000_initial_medflow_schema.sql`, `drizzle/0001_immutability_triggers.sql`) enforcing all 8 founder requirements:
+  1. Composite `(intake_id, facility_id)` FKs on `intake_evidence` and `audit_events`.
+  2. `intake_evidence` immutability trigger permitting only one-way `is_current: true -> false` and forbidding `DELETE`.
+  3. Complete 10-action-to-actor DB-level `CHECK` mapping on `audit_events` + mandatory `reason` on `priority_changed` and `brief_corrected`.
+  4. DB-level `CHECK` constraint enforcing internal consistency across `staff_review_status`, `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note`.
+  5. Canonical synthetic facility `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`); retire `demo-facility-001` and `DEMO-FACILITY`.
+  6. Strictly server-only `DATABASE_URL` (runtime) and `DATABASE_URL_UNPOOLED` (direct migrations).
+  7. Defer `EVIDENCE_HMAC_SECRET` until Milestone 3.
+  8. No live Neon database operations in Phase 1D-1; keep existing Firebase Auth and legacy Firestore files untouched until Phases 1D-2/1D-3.
+
+#### Phase 1D-2 — PostgreSQL Data-Access Layer, API Routes & UI Cutover (requires separate approval)
+- Implement server-only PostgreSQL repository/service layer (`src/lib/db/*`) with transactional intake creation, staff authorization (`verifyIdToken` + PostgreSQL `staff_profiles`/`facility_memberships`), queue queries, and atomic audited mutations.
+- Migrate `/api/staff/session` and implement PostgreSQL-backed Route Handlers (`/api/staff/intakes`, etc.).
+- Replace client-side Firestore `onSnapshot` listeners with visibility-aware polling of authenticated Route Handlers.
+- Keep Firebase Authentication and its `/__/auth/*` proxy completely intact.
+
+#### Phase 1D-3 — Live Neon Migration, Seeding, Verification & Legacy Firestore Cleanup (requires Neon credentials & separate approval)
+- Once the founder provisions Neon and supplies `DATABASE_URL` and `DATABASE_URL_UNPOOLED` as server-only secrets, run `drizzle-kit migrate` and idempotent `src/db/seed.ts`.
+- Execute live PostgreSQL constraint/trigger negative tests and interactive desktop/mobile browser verification (Google Sign-In → authorized queue).
+- Remove legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/firestore.ts`, Firestore security-rules tests/dependencies) while preserving Firebase Auth.
 
 ### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval)
 
-- Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable intake persistence.
-- Follow Starter Tier Option 1B: AI extraction is triggered and persisted only through an authenticated, active, facility-authorised staff session.
+- Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable PostgreSQL intake persistence (`POST /api/intakes` atomic transaction with `intake_created` / `transcript_confirmed` audit events).
+- Follow `D-015` (Option 1B): AI extraction is triggered and persisted only through an authenticated, active, facility-authorised staff session via server-side PostgreSQL transactions.
 - Gemini remains server-side; preserve the strict schema and source-quote requirements.
 - Keep original narrative, AI draft and staff-reviewed copy separate.
 - Stop before implementing the full Evidence Integrity Engine; report the extraction workflow and test results.
 
 ### Milestone 3 — Evidence Integrity Engine (requires separate approval)
 
-- Implement the deterministic algorithm in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
-- Add exact quote matching, server-derived UTF-16 source spans, field-level evidence states, narrative/draft hashes, HMAC provenance signing and verification.
+- Configure server-only `EVIDENCE_HMAC_SECRET` and implement the deterministic algorithm in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
+- Add exact quote matching, server-derived UTF-16 source spans, field-level evidence states persisted to `intake_evidence`, narrative/draft hashes, HMAC provenance signing and verification.
 - Add staff UI for inspecting source matches and resolving unsupported/ambiguous evidence.
 - Run the complete synthetic EIE test matrix and stop with a verified report.
 
-No milestone may be silently combined with the next. Each requires its own explicit founder approval and stop report.
+No milestone or phase may be silently combined with the next. Each requires its own explicit founder approval and stop report.

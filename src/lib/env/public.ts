@@ -3,7 +3,7 @@ export interface PublicConfig {
   readonly appEnv: string;
 }
 
-const DEFAULT_DEMO_FACILITY_PUBLIC_CODE = "DEMO-FACILITY";
+const DEFAULT_DEMO_FACILITY_PUBLIC_CODE = "DEMO-CLINIC-01";
 
 export function getPublicConfig(
   env: Record<string, string | undefined> = process.env,

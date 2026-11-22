@@ -1,9 +1,9 @@
 # Decisions and Risks — MedFlow (Working Codename)
 
 **Document ID:** MED-GOV-015  
-**Version:** 0.2  
-**Status:** Proposed decision log for founder approval  
-**Last updated:** 2026-11-21
+**Version:** 0.3  
+**Status:** Active decision log (includes Milestone 1D Neon PostgreSQL approval)  
+**Last updated:** 2026-11-22
 
 ## 1. Approved project constraints
 
@@ -48,7 +48,7 @@
 | R-010 | `MedFlow` brand collides with existing health products. | High | Keep as codename; complete CAC/company-name, trademark, domain, and market clearance before public brand lock. |
 | R-011 | Voice capture or transcription fails on some browsers, devices, noisy environments or accents. | High | Validate the target Android browser early; use MediaRecorder and server-side transcription; test Nigerian English and Pidgin sample utterances; keep transcript editable and typed fallback always available; report limitations honestly. |
 | R-012 | MVP scope exceeds the available build window. | High | Protect the P0 vertical slice, including voice capture/transcription, typed fallback, evidence-linked extraction, live queue, staff priority and audit. Cut P1 items such as analytics, QR generation, print/export, extended language experiments and advanced reporting first. |
-| R-013 | Firebase security rules fail to isolate staff/facility data. | Critical | Use authenticated staff roles, server-side validation where appropriate, facility-scoped rules, and security tests. |
+| R-013 | Database authorization or tenant-isolation controls fail to isolate staff/facility data. | Critical | Enforce server-side Firebase ID-token verification plus authoritative PostgreSQL facility membership/role checks, composite `(intake_id, facility_id)` foreign keys, DB immutability/append-only triggers, action-to-actor CHECK constraints, and automated security tests (retaining existing Firestore rules only until Phase 1D-3 decommissioning). |
 | R-014 | Public source code exposes secrets or demo credentials. | Critical | `.env.example` only, secret scanning, no credentials in commits, remove test accounts and review history. |
 
 ## 4. Sources requiring special handling
@@ -96,9 +96,9 @@ Founder approval is required for proposed decisions before they become locked pr
 
 | ID | Decision | Status | Consequence |
 |---|---|---|---|
-| D-014 | Use the verified Google AI Studio Starter Tier-compatible architecture on provisioned project `daring-brace-jw1xt` (region `europe-west3`, named Firestore Enterprise Edition database `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`). Do not bypass IAM limitations or use service-account keys. | Approved by founder | Server-side `firebase-admin` is strictly limited to no-IAM `verifyIdToken(token)` verification. Firestore persistence, facility isolation, staff authorization, and append-only audit invariants are enforced by hardened `firestore.rules`. |
-| D-015 | Adopt Option 1B for AI draft persistence: patient submission creates the intake and its initial `intake_created` audit event; AI extraction is triggered and persisted only through an authenticated, authorized staff session with server-side Gemini processing, provenance verification, and strict schema validation. | Approved by founder | Zero unauthenticated post-submission AI draft writes; original patient narrative stays immutable and durably saved before AI runs. |
-| D-016 | Adopt Option 2B for initial facility and staff bootstrap: do not add an email-specific bootstrap exception to `firestore.rules`; keep `/facilities` and `/staff` non-writable by ordinary clients and provision the synthetic demo facility and initial administrator profile manually in the Firebase Console. | Approved by founder | Eliminates client-side privilege escalation paths; authentication alone grants zero clinical access. |
+| D-014 | ~~Use the verified Google AI Studio Starter Tier-compatible architecture on provisioned project `daring-brace-jw1xt` (region `europe-west3`, named Firestore Enterprise Edition database `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`).~~ **Superseded for application persistence by `D-020`.** | Superseded by D-020 (transitional Firestore kept active until Phase 1D-3) | Firebase Authentication on `daring-brace-jw1xt` remains the identity provider; Cloud Firestore is being replaced by Neon PostgreSQL across Milestone 1D (Phases 1D-1 to 1D-3). |
+| D-015 | Adopt Option 1B for AI draft persistence: patient submission creates the intake and its initial `intake_created` audit event; AI extraction is triggered and persisted only through an authenticated, authorized staff session with server-side Gemini processing, provenance verification, and strict schema validation. | Approved by founder (updated by D-020 to persist via server-side PostgreSQL transactions) | Zero unauthenticated post-submission AI draft writes; original patient narrative stays immutable and durably saved before AI runs. |
+| D-016 | Adopt Option 2B for initial facility and staff bootstrap: do not add an email-specific self-provisioning bootstrap exception for ordinary clients; provision the synthetic demo facility and initial administrator profile explicitly via controlled administrative provisioning (and idempotent founder-run CLI `src/db/seed.ts` under D-020). | Approved by founder (updated by D-020 for PostgreSQL CLI seeding) | Eliminates client-side privilege escalation paths; authentication alone grants zero clinical access. |
 
 
 
@@ -109,3 +109,9 @@ Founder approval is required for proposed decisions before they become locked pr
 |---|---|---|---|
 | D-018 | Adopt the deterministic **Evidence Integrity Engine** as MedFlow's algorithmic differentiator. It checks exact source-quote matches, derives source spans, records field-level evidence states and binds the validated draft to the immutable narrative through server-generated provenance. | Approved by founder; implementation pending | The engine proves source-location/provenance mechanics only, not clinical truth or semantic correctness. No aggregate trust score. Implement after patient intake and Gemini extraction are working. |
 | D-019 | Do not implement the adult TEWS/SATS scoring function, clinical classifications, clinical time targets, vital-sign scoring, autonomous triage or AI red-flag prioritisation shown in the supplied HTML as active MVP functionality. | Approved by founder | Those elements remain reference-only and deferred pending a separate clinical governance decision, authoritative protocol review and local validation plan. Staff-assigned workflow labels remain operational queue organisation only. |
+
+## 10. Milestone 1D founder decision — Neon PostgreSQL replacing Cloud Firestore (confirmed 2026-11-22)
+
+| ID | Decision | Status | Consequence |
+|---|---|---|---|
+| D-020 | Replace Cloud Firestore with **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) as MedFlow's authoritative application database while keeping **Firebase Authentication** (Google Sign-In + same-origin `/__/auth/*` proxy + server-side `verifyIdToken`) as the identity provider. Execute in three separately approved phases: **Phase 1D-1** (offline schema, SQL migrations, triggers, seed script, env/docs), **Phase 1D-2** (PostgreSQL data-access layer, server-authoritative Next.js Route Handlers, visibility-aware queue polling), and **Phase 1D-3** (live Neon migration/seeding, end-to-end verification, legacy Firestore decommissioning). | Approved by founder (Phase 1D-1 implemented; Phases 1D-2 & 1D-3 pending separate approval) | Supersedes `D-014` for persistence and updates `D-015`/`D-016` to server-side PostgreSQL transactions. Enforces all 8 mandatory founder requirements: (1) composite `(intake_id, facility_id)` FKs on `intake_evidence` and `audit_events` to guarantee facility match with `patient_intakes`; (2) `intake_evidence` DB immutability trigger permitting only one-way `is_current: true -> false` and forbidding DELETE; (3) DB-level `CHECK` constraint enforcing the complete 10-action-to-actor mapping on `audit_events` (`patient`: `intake_created`, `transcript_confirmed`; `system`: `ai_completed`, `ai_failed`; `staff`: `review_started`, `priority_assigned`, `priority_changed`, `status_changed`, `brief_confirmed`, `brief_corrected`); (4) DB-level `CHECK` constraint ensuring `staff_review_status`, `staff_reviewed_brief`, `reviewed_by_uid`, `reviewed_at`, and `staff_correction_note` remain internally consistent; (5) `demo-clinic-01` and `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`) as the sole canonical synthetic facility identifiers (retiring `demo-facility-001` and `DEMO-FACILITY`); (6) strictly server-only `DATABASE_URL` (pooled runtime) and `DATABASE_URL_UNPOOLED` (direct schema migrations); (7) defer `EVIDENCE_HMAC_SECRET` until Milestone 3; (8) no live Neon database operations during Phase 1D-1 before founder provisioning. |

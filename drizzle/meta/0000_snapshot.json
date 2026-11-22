@@ -1,0 +1,1196 @@
+{
+  "id": "0670366c-aed2-4723-9875-239ca03d5bc3",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.audit_events": {
+      "name": "audit_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "facility_id": {
+          "name": "facility_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intake_id": {
+          "name": "intake_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "audit_actor_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_uid": {
+          "name": "actor_uid",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "staff_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_display_name": {
+          "name": "actor_display_name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "audit_action",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_value": {
+          "name": "from_value",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_value": {
+          "name": "to_value",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "audit_events_facility_intake_created_idx": {
+          "name": "audit_events_facility_intake_created_idx",
+          "columns": [
+            {
+              "expression": "facility_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intake_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_events_facility_id_facilities_id_fk": {
+          "name": "audit_events_facility_id_facilities_id_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "facilities",
+          "columnsFrom": [
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "audit_events_actor_uid_staff_profiles_uid_fk": {
+          "name": "audit_events_actor_uid_staff_profiles_uid_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "staff_profiles",
+          "columnsFrom": [
+            "actor_uid"
+          ],
+          "columnsTo": [
+            "uid"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "audit_events_intake_facility_fk": {
+          "name": "audit_events_intake_facility_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "patient_intakes",
+          "columnsFrom": [
+            "intake_id",
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id",
+            "facility_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "audit_events_actor_identity_chk": {
+          "name": "audit_events_actor_identity_chk",
+          "value": "(\n        \"audit_events\".\"actor_type\" = 'staff'\n        AND \"audit_events\".\"actor_uid\" IS NOT NULL\n        AND \"audit_events\".\"actor_role\" IS NOT NULL\n      ) OR (\n        \"audit_events\".\"actor_type\" IN ('patient', 'system')\n        AND \"audit_events\".\"actor_uid\" IS NULL\n        AND \"audit_events\".\"actor_role\" IS NULL\n      )"
+        },
+        "audit_events_action_actor_mapping_chk": {
+          "name": "audit_events_action_actor_mapping_chk",
+          "value": "(\n        \"audit_events\".\"action\" IN ('intake_created', 'transcript_confirmed')\n        AND \"audit_events\".\"actor_type\" = 'patient'\n      ) OR (\n        \"audit_events\".\"action\" IN ('ai_completed', 'ai_failed')\n        AND \"audit_events\".\"actor_type\" = 'system'\n      ) OR (\n        \"audit_events\".\"action\" IN (\n          'review_started',\n          'priority_assigned',\n          'priority_changed',\n          'status_changed',\n          'brief_confirmed',\n          'brief_corrected'\n        )\n        AND \"audit_events\".\"actor_type\" = 'staff'\n      )"
+        },
+        "audit_events_reason_required_chk": {
+          "name": "audit_events_reason_required_chk",
+          "value": "(\n        \"audit_events\".\"action\" NOT IN ('priority_changed', 'brief_corrected')\n        AND (\"audit_events\".\"reason\" IS NULL OR char_length(\"audit_events\".\"reason\") <= 500)\n      ) OR (\n        \"audit_events\".\"action\" IN ('priority_changed', 'brief_corrected')\n        AND \"audit_events\".\"reason\" IS NOT NULL\n        AND char_length(btrim(\"audit_events\".\"reason\")) >= 3\n        AND char_length(\"audit_events\".\"reason\") <= 500\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.facilities": {
+      "name": "facilities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(128)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_code": {
+          "name": "public_code",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Africa/Lagos'"
+        },
+        "is_demo": {
+          "name": "is_demo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "facilities_public_code_uq": {
+          "name": "facilities_public_code_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "facilities_id_format_chk": {
+          "name": "facilities_id_format_chk",
+          "value": "\"facilities\".\"id\" ~ '^[a-zA-Z0-9_-]+$'"
+        },
+        "facilities_public_code_format_chk": {
+          "name": "facilities_public_code_format_chk",
+          "value": "\"facilities\".\"public_code\" ~ '^[A-Z0-9_-]+$'"
+        },
+        "facilities_name_nonempty_chk": {
+          "name": "facilities_name_nonempty_chk",
+          "value": "char_length(btrim(\"facilities\".\"name\")) >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.facility_memberships": {
+      "name": "facility_memberships",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "staff_uid": {
+          "name": "staff_uid",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "facility_id": {
+          "name": "facility_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "staff_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "facility_memberships_facility_active_idx": {
+          "name": "facility_memberships_facility_active_idx",
+          "columns": [
+            {
+              "expression": "facility_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "facility_memberships_staff_active_idx": {
+          "name": "facility_memberships_staff_active_idx",
+          "columns": [
+            {
+              "expression": "staff_uid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "facility_memberships_staff_uid_staff_profiles_uid_fk": {
+          "name": "facility_memberships_staff_uid_staff_profiles_uid_fk",
+          "tableFrom": "facility_memberships",
+          "tableTo": "staff_profiles",
+          "columnsFrom": [
+            "staff_uid"
+          ],
+          "columnsTo": [
+            "uid"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "facility_memberships_facility_id_facilities_id_fk": {
+          "name": "facility_memberships_facility_id_facilities_id_fk",
+          "tableFrom": "facility_memberships",
+          "tableTo": "facilities",
+          "columnsFrom": [
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "facility_memberships_staff_facility_uq": {
+          "name": "facility_memberships_staff_facility_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "staff_uid",
+            "facility_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.intake_evidence": {
+      "name": "intake_evidence",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "intake_id": {
+          "name": "intake_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "facility_id": {
+          "name": "facility_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extraction_run_id": {
+          "name": "extraction_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_current": {
+          "name": "is_current",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "field_category": {
+          "name": "field_category",
+          "type": "evidence_field_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_path": {
+          "name": "field_path",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_value": {
+          "name": "claim_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "certainty": {
+          "name": "certainty",
+          "type": "evidence_certainty",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_quote": {
+          "name": "source_quote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verification_status": {
+          "name": "verification_status",
+          "type": "evidence_verification_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "span_start": {
+          "name": "span_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "span_end": {
+          "name": "span_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "engine_version": {
+          "name": "engine_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narrative_sha256": {
+          "name": "narrative_sha256",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "intake_evidence_current_field_uq": {
+          "name": "intake_evidence_current_field_uq",
+          "columns": [
+            {
+              "expression": "intake_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"intake_evidence\".\"is_current\" = true",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "intake_evidence_facility_intake_current_idx": {
+          "name": "intake_evidence_facility_intake_current_idx",
+          "columns": [
+            {
+              "expression": "facility_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intake_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_current",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "intake_evidence_facility_id_facilities_id_fk": {
+          "name": "intake_evidence_facility_id_facilities_id_fk",
+          "tableFrom": "intake_evidence",
+          "tableTo": "facilities",
+          "columnsFrom": [
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "intake_evidence_intake_facility_fk": {
+          "name": "intake_evidence_intake_facility_fk",
+          "tableFrom": "intake_evidence",
+          "tableTo": "patient_intakes",
+          "columnsFrom": [
+            "intake_id",
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id",
+            "facility_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "intake_evidence_run_field_uq": {
+          "name": "intake_evidence_run_field_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "intake_id",
+            "extraction_run_id",
+            "field_path"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "intake_evidence_field_path_nonempty_chk": {
+          "name": "intake_evidence_field_path_nonempty_chk",
+          "value": "char_length(btrim(\"intake_evidence\".\"field_path\")) >= 1"
+        },
+        "intake_evidence_claim_value_len_chk": {
+          "name": "intake_evidence_claim_value_len_chk",
+          "value": "char_length(btrim(\"intake_evidence\".\"claim_value\")) >= 1 AND char_length(\"intake_evidence\".\"claim_value\") <= 500"
+        },
+        "intake_evidence_source_quote_len_chk": {
+          "name": "intake_evidence_source_quote_len_chk",
+          "value": "\"intake_evidence\".\"source_quote\" IS NULL OR (char_length(\"intake_evidence\".\"source_quote\") >= 1 AND char_length(\"intake_evidence\".\"source_quote\") <= 500)"
+        },
+        "intake_evidence_narrative_sha256_chk": {
+          "name": "intake_evidence_narrative_sha256_chk",
+          "value": "\"intake_evidence\".\"narrative_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "intake_evidence_status_span_chk": {
+          "name": "intake_evidence_status_span_chk",
+          "value": "(\n        \"intake_evidence\".\"verification_status\" = 'exact_quote_match'\n        AND \"intake_evidence\".\"source_quote\" IS NOT NULL\n        AND char_length(\"intake_evidence\".\"source_quote\") >= 1\n        AND \"intake_evidence\".\"span_start\" IS NOT NULL\n        AND \"intake_evidence\".\"span_end\" IS NOT NULL\n        AND \"intake_evidence\".\"span_start\" >= 0\n        AND \"intake_evidence\".\"span_end\" > \"intake_evidence\".\"span_start\"\n      ) OR (\n        \"intake_evidence\".\"verification_status\" = 'missing_quote'\n        AND \"intake_evidence\".\"source_quote\" IS NULL\n        AND \"intake_evidence\".\"span_start\" IS NULL\n        AND \"intake_evidence\".\"span_end\" IS NULL\n      ) OR (\n        \"intake_evidence\".\"verification_status\" IN ('quote_not_found', 'ambiguous_quote')\n        AND \"intake_evidence\".\"source_quote\" IS NOT NULL\n        AND char_length(\"intake_evidence\".\"source_quote\") >= 1\n        AND \"intake_evidence\".\"span_start\" IS NULL\n        AND \"intake_evidence\".\"span_end\" IS NULL\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.patient_intakes": {
+      "name": "patient_intakes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "facility_id": {
+          "name": "facility_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_code": {
+          "name": "reference_code",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "demo_record": {
+          "name": "demo_record",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "patient_display_name": {
+          "name": "patient_display_name",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "age": {
+          "name": "age",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_mode": {
+          "name": "input_mode",
+          "type": "input_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transcription_status": {
+          "name": "transcription_status",
+          "type": "transcription_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'not_applicable'"
+        },
+        "transcription_model": {
+          "name": "transcription_model",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transcript_raw": {
+          "name": "transcript_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_narrative": {
+          "name": "confirmed_narrative",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_narrative_sha256": {
+          "name": "confirmed_narrative_sha256",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transcript_confirmed_at": {
+          "name": "transcript_confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_status": {
+          "name": "ai_status",
+          "type": "ai_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "ai_schema_version": {
+          "name": "ai_schema_version",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_model_id": {
+          "name": "ai_model_id",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_brief": {
+          "name": "ai_brief",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_brief_provenance": {
+          "name": "ai_brief_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_error_code": {
+          "name": "ai_error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "staff_review_status": {
+          "name": "staff_review_status",
+          "type": "staff_review_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'not_reviewed'"
+        },
+        "staff_reviewed_brief": {
+          "name": "staff_reviewed_brief",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "staff_correction_note": {
+          "name": "staff_correction_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_by_uid": {
+          "name": "reviewed_by_uid",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "staff_assigned_priority": {
+          "name": "staff_assigned_priority",
+          "type": "staff_assigned_priority",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unassigned'"
+        },
+        "priority_reason": {
+          "name": "priority_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workflow_status": {
+          "name": "workflow_status",
+          "type": "workflow_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "patient_intakes_facility_queue_idx": {
+          "name": "patient_intakes_facility_queue_idx",
+          "columns": [
+            {
+              "expression": "facility_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "workflow_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "staff_assigned_priority",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "patient_intakes_facility_created_idx": {
+          "name": "patient_intakes_facility_created_idx",
+          "columns": [
+            {
+              "expression": "facility_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "patient_intakes_facility_id_facilities_id_fk": {
+          "name": "patient_intakes_facility_id_facilities_id_fk",
+          "tableFrom": "patient_intakes",
+          "tableTo": "facilities",
+          "columnsFrom": [
+            "facility_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "patient_intakes_reviewed_by_uid_staff_profiles_uid_fk": {
+          "name": "patient_intakes_reviewed_by_uid_staff_profiles_uid_fk",
+          "tableFrom": "patient_intakes",
+          "tableTo": "staff_profiles",
+          "columnsFrom": [
+            "reviewed_by_uid"
+          ],
+          "columnsTo": [
+            "uid"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "patient_intakes_id_facility_id_uq": {
+          "name": "patient_intakes_id_facility_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "facility_id"
+          ]
+        },
+        "patient_intakes_facility_ref_uq": {
+          "name": "patient_intakes_facility_ref_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "facility_id",
+            "reference_code"
+          ]
+        },
+        "patient_intakes_facility_idem_uq": {
+          "name": "patient_intakes_facility_idem_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "facility_id",
+            "idempotency_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "patient_intakes_reference_code_format_chk": {
+          "name": "patient_intakes_reference_code_format_chk",
+          "value": "\"patient_intakes\".\"reference_code\" ~ '^[A-Z0-9-]+$' AND char_length(\"patient_intakes\".\"reference_code\") >= 4"
+        },
+        "patient_intakes_idempotency_key_format_chk": {
+          "name": "patient_intakes_idempotency_key_format_chk",
+          "value": "\"patient_intakes\".\"idempotency_key\" ~ '^[a-zA-Z0-9_-]+$' AND char_length(\"patient_intakes\".\"idempotency_key\") >= 8"
+        },
+        "patient_intakes_age_range_chk": {
+          "name": "patient_intakes_age_range_chk",
+          "value": "\"patient_intakes\".\"age\" IS NULL OR (\"patient_intakes\".\"age\" >= 0 AND \"patient_intakes\".\"age\" <= 120)"
+        },
+        "patient_intakes_narrative_len_chk": {
+          "name": "patient_intakes_narrative_len_chk",
+          "value": "char_length(\"patient_intakes\".\"confirmed_narrative\") >= 5 AND char_length(\"patient_intakes\".\"confirmed_narrative\") <= 4000"
+        },
+        "patient_intakes_narrative_sha256_chk": {
+          "name": "patient_intakes_narrative_sha256_chk",
+          "value": "\"patient_intakes\".\"confirmed_narrative_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "patient_intakes_transcript_raw_len_chk": {
+          "name": "patient_intakes_transcript_raw_len_chk",
+          "value": "\"patient_intakes\".\"transcript_raw\" IS NULL OR (char_length(\"patient_intakes\".\"transcript_raw\") >= 1 AND char_length(\"patient_intakes\".\"transcript_raw\") <= 4000)"
+        },
+        "patient_intakes_ai_succeeded_brief_chk": {
+          "name": "patient_intakes_ai_succeeded_brief_chk",
+          "value": "\"patient_intakes\".\"ai_status\" <> 'succeeded' OR \"patient_intakes\".\"ai_brief\" IS NOT NULL"
+        },
+        "patient_intakes_priority_reason_chk": {
+          "name": "patient_intakes_priority_reason_chk",
+          "value": "(\"patient_intakes\".\"staff_assigned_priority\" = 'unassigned' AND \"patient_intakes\".\"priority_reason\" IS NULL) OR (\"patient_intakes\".\"staff_assigned_priority\" <> 'unassigned' AND (\"patient_intakes\".\"priority_reason\" IS NULL OR char_length(\"patient_intakes\".\"priority_reason\") <= 500))"
+        },
+        "patient_intakes_staff_review_consistency_chk": {
+          "name": "patient_intakes_staff_review_consistency_chk",
+          "value": "(\n        \"patient_intakes\".\"staff_review_status\" = 'not_reviewed'\n        AND \"patient_intakes\".\"staff_reviewed_brief\" IS NULL\n        AND \"patient_intakes\".\"reviewed_by_uid\" IS NULL\n        AND \"patient_intakes\".\"reviewed_at\" IS NULL\n        AND \"patient_intakes\".\"staff_correction_note\" IS NULL\n      ) OR (\n        \"patient_intakes\".\"staff_review_status\" = 'confirmed'\n        AND \"patient_intakes\".\"reviewed_by_uid\" IS NOT NULL\n        AND \"patient_intakes\".\"reviewed_at\" IS NOT NULL\n        AND \"patient_intakes\".\"staff_correction_note\" IS NULL\n      ) OR (\n        \"patient_intakes\".\"staff_review_status\" = 'corrected'\n        AND \"patient_intakes\".\"staff_reviewed_brief\" IS NOT NULL\n        AND \"patient_intakes\".\"reviewed_by_uid\" IS NOT NULL\n        AND \"patient_intakes\".\"reviewed_at\" IS NOT NULL\n        AND \"patient_intakes\".\"staff_correction_note\" IS NOT NULL\n        AND char_length(btrim(\"patient_intakes\".\"staff_correction_note\")) >= 3\n        AND char_length(\"patient_intakes\".\"staff_correction_note\") <= 500\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.staff_profiles": {
+      "name": "staff_profiles",
+      "schema": "",
+      "columns": {
+        "uid": {
+          "name": "uid",
+          "type": "varchar(128)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "staff_profiles_email_uq": {
+          "name": "staff_profiles_email_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "staff_profiles_uid_format_chk": {
+          "name": "staff_profiles_uid_format_chk",
+          "value": "\"staff_profiles\".\"uid\" ~ '^[a-zA-Z0-9_-]+$'"
+        },
+        "staff_profiles_display_name_nonempty_chk": {
+          "name": "staff_profiles_display_name_nonempty_chk",
+          "value": "char_length(btrim(\"staff_profiles\".\"display_name\")) >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.ai_status": {
+      "name": "ai_status",
+      "schema": "public",
+      "values": [
+        "queued",
+        "processing",
+        "succeeded",
+        "failed",
+        "needs_human_clarification"
+      ]
+    },
+    "public.audit_action": {
+      "name": "audit_action",
+      "schema": "public",
+      "values": [
+        "intake_created",
+        "transcript_confirmed",
+        "ai_completed",
+        "ai_failed",
+        "review_started",
+        "priority_assigned",
+        "priority_changed",
+        "status_changed",
+        "brief_confirmed",
+        "brief_corrected"
+      ]
+    },
+    "public.audit_actor_type": {
+      "name": "audit_actor_type",
+      "schema": "public",
+      "values": [
+        "patient",
+        "staff",
+        "system"
+      ]
+    },
+    "public.evidence_certainty": {
+      "name": "evidence_certainty",
+      "schema": "public",
+      "values": [
+        "explicit",
+        "unclear"
+      ]
+    },
+    "public.evidence_field_category": {
+      "name": "evidence_field_category",
+      "schema": "public",
+      "values": [
+        "chief_concern",
+        "symptom",
+        "relevant_context",
+        "reported_detail_to_review"
+      ]
+    },
+    "public.evidence_verification_status": {
+      "name": "evidence_verification_status",
+      "schema": "public",
+      "values": [
+        "exact_quote_match",
+        "missing_quote",
+        "quote_not_found",
+        "ambiguous_quote"
+      ]
+    },
+    "public.input_mode": {
+      "name": "input_mode",
+      "schema": "public",
+      "values": [
+        "typed",
+        "voice"
+      ]
+    },
+    "public.staff_assigned_priority": {
+      "name": "staff_assigned_priority",
+      "schema": "public",
+      "values": [
+        "unassigned",
+        "immediate_review",
+        "priority_review",
+        "routine_review"
+      ]
+    },
+    "public.staff_review_status": {
+      "name": "staff_review_status",
+      "schema": "public",
+      "values": [
+        "not_reviewed",
+        "confirmed",
+        "corrected"
+      ]
+    },
+    "public.staff_role": {
+      "name": "staff_role",
+      "schema": "public",
+      "values": [
+        "nurse",
+        "doctor",
+        "admin"
+      ]
+    },
+    "public.transcription_status": {
+      "name": "transcription_status",
+      "schema": "public",
+      "values": [
+        "not_applicable",
+        "succeeded",
+        "failed"
+      ]
+    },
+    "public.workflow_status": {
+      "name": "workflow_status",
+      "schema": "public",
+      "values": [
+        "new",
+        "in_review",
+        "awaiting_clarification",
+        "completed"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
