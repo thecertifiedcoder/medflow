@@ -91,15 +91,15 @@ Voice is an approved P0 requirement and must be tested early. If the Gemini tran
 
 ## 5. Starting the new Google AI Studio session
 
-The repository is a documentation/design-system baseline, not an existing application scaffold. Start a **new Build Mode session** and import the existing GitHub repository; do not create a replacement repository.
+The repository is a documentation baseline, not an existing application scaffold. Start a **new Build Mode session** and import the existing GitHub repository; do not create a replacement repository.
 
 1. Open Google AI Studio and enter **Build** mode.
 2. Open the Build **Settings** panel and select **Next.js** as the framework. Next.js is supported in AI Studio; it may not be the default. Do this before asking the agent to initialise the application.
 3. From the prompt input's **Add files (+)** menu, choose **Import from GitHub**.
 4. Select `thecertifiedcoder/medflow`, branch `main`. The repository is private, so ensure the GitHub connection/GitHub App has access to it. Do not make it public just to import it.
-5. Wait for the import to complete. Confirm the project documents and the complete `design-system/` directory are visible. Do not accept a partial import.
+5. Wait for the import to complete and confirm the project documents are visible. The founder will attach the standalone HTML design-system file directly to the AI Studio conversation; it does not need to live in the repository.
 6. Open `AI_STUDIO_MASTER_PROMPT.md` in the imported repository and provide its complete contents to the Build agent. The agent must read the whole documentation pack and return the implementation-readiness report described in section 13 of that prompt.
-7. Review its report. In particular, check that it selected Next.js, understands that the repo has no application scaffold yet, preserves all existing docs/design files, and has not edited application code.
+7. Review its report. In particular, check that it selected Next.js, understands that the repo has no application scaffold yet, preserves the project documentation, recognises the attached HTML as the sole visual source, and has not edited application code.
 8. Confirm the planned Firebase/Auth/Firestore approach, server-side secrets, Gemini integration and first implementation milestone before authorising code changes.
 
 Google's official announcement confirms that Build Mode supports Next.js and that the framework is selected from Settings: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/
@@ -108,7 +108,7 @@ Google's official announcement confirms that Build Mode supports Next.js and tha
 
 ## 6. Working with Google AI Studio
 
-- Give AI Studio the complete documentation pack and HTML design-system files.
+- Give AI Studio the complete documentation pack and attach the single standalone HTML design-system file to the conversation.
 - Instruct it to read all documents before editing code.
 - Ask for a project map and implementation plan before the first build action.
 - Work in milestones; inspect the changed files and run the app after every milestone.
@@ -132,13 +132,14 @@ Google's official announcement confirms that Build Mode supports Next.js and tha
 
 Milestone 1A and Milestone 1B are implemented and verified in AI Studio Preview according to their stop reports. The founder still needs to manually create the synthetic facility and staff profile in Firebase Console and complete the interactive Google Sign-In/authorized queue check. Do not claim those founder-only checks are complete until observed.
 
-### Milestone 1C — New design-system migration (requires separate approval)
+### Milestone 1C — Replace the existing UI design system (requires separate approval)
 
-- Read `docs/18_DESIGN_SYSTEM_SPEC.md` and the full new `design-system/medflow-design-system.html` plus `design-system/design-tokens.css`.
-- Replace the old visual tokens, typography, components and styling with the founder-approved IBM Plex / teal / navy system.
-- Preserve the existing Next.js routes, Firebase setup, deployed Firestore rules and staff authorization behaviour.
-- Rebuild the reference as accessible React components; do not iframe it or copy its JavaScript demonstrations.
-- Do not implement the reference's adult TEWS/SATS score, clinical colour classifications, time targets, vital-sign scoring or AI red-flag prioritisation. Those elements are excluded by D-019.
+- The founder must attach the complete standalone HTML design-system file directly to the AI Studio conversation. If it is not attached, stop and request it.
+- Treat that one HTML file as the only visual source of truth. Do not create a separate design-tokens file, extracted CSS token sheet, design-system specification or duplicate reference.
+- Remove obsolete design-system files and references from the repository, then rebuild the existing React components to match the attached HTML's visual language and responsive layouts.
+- Preserve the existing Next.js routes, Firebase setup, deployed Firestore rules, staff authorization and all approved product behaviour.
+- Do not iframe the HTML or copy its demo JavaScript. Its controls are visual examples, not working integrations.
+- Do not implement any adult TEWS/SATS scoring, clinical classifications, time targets, vital-sign scoring or AI red-flag prioritisation shown in the HTML. Those features remain excluded by D-019.
 - Run typecheck, lint, production build and desktop/mobile browser verification. Stop and provide a changed-file report and screenshots of the actual app.
 - Do not start Milestone 2 in the same authorization.
 
