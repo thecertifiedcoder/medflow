@@ -66,8 +66,9 @@ type AuditEvent = {
   id: string;
   facilityId: string;
   intakeId: string;
-  actorUid: string;
-  actorRole: "nurse" | "doctor" | "admin";
+  actorType: "patient" | "staff" | "system";
+  actorUid?: string; // required when actorType === "staff"; omitted for patient/system
+  actorRole?: "nurse" | "doctor" | "admin"; // required when actorType === "staff"; forbidden for patient/system
   action: "intake_created" | "transcript_confirmed" | "ai_completed" | "ai_failed" | "review_started" | "priority_assigned" | "priority_changed" | "status_changed" | "brief_confirmed" | "brief_corrected";
   fromValue?: string;
   toValue?: string;
@@ -76,7 +77,7 @@ type AuditEvent = {
 };
 ```
 
-Audit events are append-only. Avoid storing full narrative content in audit metadata.
+Audit events are append-only. Never represent patient or automated system actions as nurses, doctors, or admins. Avoid storing full narrative content in audit metadata.
 
 ### `staff/{uid}`
 

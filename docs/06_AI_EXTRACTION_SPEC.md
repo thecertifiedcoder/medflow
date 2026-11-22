@@ -31,7 +31,7 @@ The extraction response must conform to a versioned schema. Suggested logical sh
   },
   "symptoms": [
     {
-      "name": "headache",
+      "value": "headache",
       "duration": "since yesterday evening",
       "severity": null,
       "sourceQuote": "My head has been paining me since yesterday evening",
@@ -41,7 +41,7 @@ The extraction response must conform to a versioned schema. Suggested logical sh
   "relevantContext": [],
   "reportedDetailsToReview": [
     {
-      "cue": "dizziness reported",
+      "detail": "dizziness reported",
       "sourceQuote": "I started feeling dizzy this morning",
       "context": "Patient-reported detail; clinical significance must be assessed by staff"
     }
@@ -52,7 +52,7 @@ The extraction response must conform to a versioned schema. Suggested logical sh
 }
 ```
 
-The schema is illustrative and must be formalised with Zod or an equivalent runtime validator. `reportedDetailsToReview` must not be a hidden urgency ranking. Avoid model-generated `priority`, `triageColor`, `diagnosis`, `treatment` or `safeToWait` fields.
+The schema matches the authoritative contract in `docs/09_DATA_MODEL_AND_API_CONTRACTS.md` (`symptoms[].value` and `reportedDetailsToReview[].detail`) and must be enforced with Zod at runtime. `reportedDetailsToReview` must not be a hidden urgency ranking. Avoid model-generated `priority`, `triageColor`, `diagnosis`, `treatment` or `safeToWait` fields.
 
 ## 4. Evidence linkage requirements
 

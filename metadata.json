@@ -1,0 +1,10 @@
+{
+  "name": "MedFlow",
+  "description": "Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow (TCC Hackathon 2026 prototype).",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -6,9 +6,9 @@ Voice is a first-class patient intake mode alongside typing. It exists to reduce
 
 ## 2. Recommended implementation
 
-Use browser `MediaRecorder` to capture a short audio clip, then upload it to a server-side transcription endpoint. Use the current Google-documented `gemini-3.5-transcribe` model for prerecorded audio via the Interactions API, subject to implementation-time verification of the current endpoint, SDK, model access and response schema. Keep the Gemini API credential on the server only.
+Use browser `MediaRecorder` to capture a short audio clip, then upload it to a server-side transcription endpoint. Use the Google-documented `gemini-3.5-transcribe` model for prerecorded audio via the `@google/genai` SDK `ai.models.generateContent` API (passing inline audio data or Files API audio parts), subject to live runtime verification of model access, MIME compatibility and response schema once `GEMINI_API_KEY` is configured. Keep the Gemini API credential on the server only.
 
-Use `VERBATIM` transcription mode for patient narratives. Do not use “smart” cleanup as the default for health statements because removing disfluencies or rewriting a spoken self-correction could change meaning. The patient can edit the transcript explicitly before submitting it. This is the selected P0 approach; validate API access and a real Android browser recording early in the sprint.
+Use `VERBATIM` transcription mode (which is the `gemini-3.5-transcribe` API default, reinforced with explicit verbatim instructions in the server request) for patient narratives. Do not use “smart” cleanup as the default for health statements because removing disfluencies or rewriting a spoken self-correction could change meaning. The patient can edit the transcript explicitly before submitting it. This is the selected P0 approach; validate live API access and a real Android browser recording early in the sprint.
 
 Browser `SpeechRecognition` must not be the only transcription path. MDN marks it as limited availability and notes that some browsers use server-based recognition. Typed intake remains the reliable fallback. A progressive enhancement may be considered only if it does not add complexity or send audio without clear disclosure.
 

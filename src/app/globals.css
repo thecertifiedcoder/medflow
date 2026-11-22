@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "../styles/design-tokens.css";
+
+@theme inline {
+  --color-mf-canvas: var(--mf-canvas);
+  --color-mf-surface: var(--mf-surface);
+  --color-mf-surface-soft: var(--mf-surface-soft);
+  --color-mf-surface-inset: var(--mf-surface-inset);
+  --color-mf-ink: var(--mf-ink);
+  --color-mf-ink-secondary: var(--mf-ink-secondary);
+  --color-mf-muted: var(--mf-muted);
+  --color-mf-muted-secondary: var(--mf-muted-secondary);
+  --color-mf-line: var(--mf-line);
+  --color-mf-line-strong: var(--mf-line-strong);
+  --color-mf-brand: var(--mf-brand);
+  --color-mf-brand-strong: var(--mf-brand-strong);
+  --color-mf-brand-soft: var(--mf-brand-soft);
+  --color-mf-brand-tint: var(--mf-brand-tint);
+  --color-mf-accent: var(--mf-accent);
+  --color-mf-accent-soft: var(--mf-accent-soft);
+  --color-mf-info: var(--mf-info);
+  --color-mf-info-soft: var(--mf-info-soft);
+  --color-mf-success: var(--mf-success);
+  --color-mf-success-soft: var(--mf-success-soft);
+  --color-mf-warning: var(--mf-warning);
+  --color-mf-warning-soft: var(--mf-warning-soft);
+  --color-mf-danger: var(--mf-danger);
+  --color-mf-danger-soft: var(--mf-danger-soft);
+
+  --font-sans: var(--mf-font-ui);
+  --font-serif: var(--mf-font-display);
+  --font-mono: var(--mf-font-mono);
+
+  --shadow-mf-1: var(--mf-shadow-1);
+  --shadow-mf-2: var(--mf-shadow-2);
+  --shadow-mf-3: var(--mf-shadow-3);
+}
+
+@layer base {
+  html {
+    background-color: var(--mf-canvas);
+    color: var(--mf-ink);
+    font-family: var(--mf-font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--mf-canvas);
+    color: var(--mf-ink);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  :focus-visible {
+    outline: 2px solid transparent;
+    box-shadow: var(--mf-focus);
+  }
+
+  ::selection {
+    background-color: #cde3d9;
+    color: var(--mf-ink);
+  }
+}
+
+.mf-display {
+  font-family: var(--mf-font-display);
+}
+
+.mf-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--mf-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

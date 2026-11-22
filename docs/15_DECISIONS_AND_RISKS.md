@@ -78,3 +78,26 @@ Never silently change an approved decision. If implementation constraints requir
 | P-017 | UI labels `Completed` as completion of the intake workflow only, not treatment or discharge. | Proposed UX rule | Prevents a workflow status being misunderstood as a clinical disposition. |
 
 Founder approval is required for proposed decisions before they become locked product commitments. The clinical safety constraints and hackathon rules remain non-negotiable.
+
+## 7. Milestone 1A founder decisions (confirmed 2026-11-21 / sprint start)
+
+| ID | Decision | Status | Consequence |
+|---|---|---|---|
+| D-006 | `docs/09_DATA_MODEL_AND_API_CONTRACTS.md` is authoritative for the structured extraction schema (`symptoms[].value`, `reportedDetailsToReview[].detail`). `docs/06_AI_EXTRACTION_SPEC.md` aligned accordingly. | Approved by founder | Single canonical Zod schema for extraction validation and UI rendering. |
+| D-007 | `AuditEvent` uses explicit `actorType: "patient" \| "staff" \| "system"`, with optional `actorUid` and `actorRole` required only for `"staff"`. | Approved by founder | Prevents patient or automated system lifecycle actions from masquerading as nurses or doctors. |
+| D-008 | Patient `age` remains optional in UX and API contracts; never required for submission. | Approved by founder | Preserves data minimisation (`FR-02`) while keeping optional context available. |
+| D-009 | Staff authentication uses Google Sign-In, gated by a provisioned, active `staff/{uid}` profile with authorised facility membership and role. | Approved by founder | Authentication alone grants zero clinical privileges; facility/role authorization is mandatory. |
+| D-010 | Ship strict P0 functionality only; no inert navigation items, fake metrics, notification controls, or unfinished P1 controls. | Approved by founder | All visible controls in the running application must correspond to real, honest functionality. |
+| D-011 | `docs/14_UX_AND_USER_FLOWS.md` defines canonical user-facing routes (`/intake`, `/staff/login`, `/staff/queue`, `/staff/intakes/[intakeId]`); `docs/09` defines API boundaries (`/api/*`). | Approved by founder | Eliminates route ambiguity across App Router pages and Route Handlers. |
+| D-012 | Retain `MedFlow_GitHub_Import_Pack.zip` untouched for now as a non-authoritative older reference snapshot. | Approved by founder | Avoids unnecessary workspace churn during early milestones. |
+| D-013 | Target Gemini models for subsequent verified integration: `gemini-4-hydrogen` (structured extraction) and `gemini-3.5-transcribe` via `generateContent` with `VERBATIM` transcription; `docs/05` updated accordingly. | Approved by founder (pending live API test) | Keeps Gemini calls strictly server-side; live verification required before claiming integration complete. |
+
+## 8. Milestone 1B founder decisions — Starter Tier Firebase Architecture (confirmed 2026-11-21)
+
+| ID | Decision | Status | Consequence |
+|---|---|---|---|
+| D-014 | Use the verified Google AI Studio Starter Tier-compatible architecture on provisioned project `daring-brace-jw1xt` (region `europe-west3`, named Firestore Enterprise Edition database `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`). Do not bypass IAM limitations or use service-account keys. | Approved by founder | Server-side `firebase-admin` is strictly limited to no-IAM `verifyIdToken(token)` verification. Firestore persistence, facility isolation, staff authorization, and append-only audit invariants are enforced by hardened `firestore.rules`. |
+| D-015 | Adopt Option 1B for AI draft persistence: patient submission creates the intake and its initial `intake_created` audit event; AI extraction is triggered and persisted only through an authenticated, authorized staff session with server-side Gemini processing, provenance verification, and strict schema validation. | Approved by founder | Zero unauthenticated post-submission AI draft writes; original patient narrative stays immutable and durably saved before AI runs. |
+| D-016 | Adopt Option 2B for initial facility and staff bootstrap: do not add an email-specific bootstrap exception to `firestore.rules`; keep `/facilities` and `/staff` non-writable by ordinary clients and provision the synthetic demo facility and initial administrator profile manually in the Firebase Console. | Approved by founder | Eliminates client-side privilege escalation paths; authentication alone grants zero clinical access. |
+
+

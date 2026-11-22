@@ -144,6 +144,22 @@ The diagram describes logical responsibilities. Keep the MVP as one Next.js depl
 - Audit events are append-only from the application perspective. Ordinary clients cannot create arbitrary audit entries, edit them or delete them. Trusted server operations create events alongside the state change, ideally in one Firestore transaction or batch.
 - A single preconfigured synthetic demo facility is sufficient for the hackathon, but preserve facility scoping in the data model.
 
+### 6.1 Verified Starter Tier runtime architecture (`daring-brace-jw1xt`, Decisions D-014 to D-016)
+
+Runtime verification in Google AI Studio Preview confirmed that the automatically provisioned Firebase project `daring-brace-jw1xt` (region `europe-west3`, named Firestore Enterprise Edition database `ai-studio-medflow-18474100-269d-4cc8-8c48-2c46f125468b`) is a Google-hosted **Starter Tier** project:
+
+- **Verified available:** Hardened `firestore.rules` deployment, Google Sign-In (`signInWithPopup`), Firebase Web SDK client connectivity to the named database, and server-side Firebase ID token signature/claim verification (`admin.auth().verifyIdToken(token)` with `checkRevoked = false`, requiring no IAM).
+- **Verified unavailable on Starter Tier:** Server-side `firebase-admin/firestore` reads and writes, Firebase Admin Auth user management (`getUser`, `createUser`, `setCustomUserClaims`), token revocation checks (`verifyIdToken(token, true)`), and IAM role grants for Preview or Cloud Run service accounts (unless the founder later upgrades the project to a standard billed Google Cloud project).
+
+Per founder decisions `D-014`, `D-015`, and `D-016`, MedFlow enforces all clinical safety and security boundaries on Starter Tier without service-account keys or loosened rules:
+
+1. **No client facility/staff provisioning (Option 2B):** `/facilities/{facilityId}` and `/staff/{uid}` deny all client writes (`create`, `update`, `delete`) with no email-specific bootstrap exception. The synthetic demo facility and initial staff profile are created manually via the Firebase Console.
+2. **Write-only patient intake with atomic audit:** Unauthenticated patient intake creation writes a strictly validated `/intakes/{intakeId}` document (`workflowStatus == "new"`, `staffAssignedPriority == "unassigned"`, `aiStatus == "queued"`, immutable `confirmedNarrative`) atomically alongside its `/intakes/{intakeId}/auditEvents/{eventId}` (`actorType == "patient"`, `action == "intake_created"`). Unauthenticated callers have zero read, update, or delete access.
+3. **Staff-only AI draft persistence (Option 1B):** Unauthenticated post-submission updates to intakes are forbidden. Gemini extraction runs server-side in Next.js Route Handlers with strict Zod validation and provenance metadata, and is triggered and persisted only through an authenticated, active, facility-authorised staff session.
+4. **Facility-scoped realtime staff reads & atomic staff mutations:** Every staff read/list and action-specific update validates `request.auth.token.email_verified == true` and an active `/staff/{uid}` document whose `facilityIds` includes the target intake's `facilityId`, requiring an atomic append-only `auditEvents` entry (`actorType == "staff"`, `actorUid == request.auth.uid`, `actorRole == staff.role`) in the same write batch.
+5. **Server-side identity verification:** Protected Next.js Route Handlers verify `Authorization: Bearer <idToken>` using `verifyIdToken(token)` (no IAM) before executing server-side operations such as Gemini extraction or session verification.
+
+
 ## 7. Data-flow rules
 
 1. Patient enters typed text or records audio after explicit microphone permission and disclosure.
