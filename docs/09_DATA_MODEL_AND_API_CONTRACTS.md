@@ -236,3 +236,55 @@ Document the indexes actually required by the implementation. Avoid unbounded co
 - Ensure a patient cannot set staff-assigned priority.
 - Ensure audit records cannot be edited/deleted by ordinary users.
 - Do not return database internals or provider stack traces.
+
+
+## 8. Evidence Integrity metadata contract (approved direction; implementation pending)
+
+The Evidence Integrity Engine is defined in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. The current Gemini candidate schema remains strict and versioned. Evidence-verification metadata is added by trusted server code after the candidate passes Zod validation; it is never accepted from Gemini or a browser client.
+
+### Evidence verification result
+
+```ts
+type EvidenceVerification = {
+  status:
+    | "exact_quote_match"
+    | "missing_quote"
+    | "quote_not_found"
+    | "ambiguous_quote";
+  sourceSpan?: {
+    start: number; // UTF-16 code units, inclusive
+    end: number;   // UTF-16 code units, exclusive
+  };
+  engineVersion: string;
+};
+
+type VerifiedEvidenceItem = EvidenceItem & {
+  evidenceVerification: EvidenceVerification;
+};
+```
+
+Rules:
+
+- Explicit claims require a source quotation.
+- The server searches the exact, immutable `confirmedNarrative`; no fuzzy matching or silent quote repair.
+- The server derives offsets. A stored span is valid only when `confirmedNarrative.slice(start, end) === sourceQuote`.
+- One exact occurrence is `exact_quote_match`; zero is `quote_not_found`; multiple occurrences are `ambiguous_quote`; absent quotation is `missing_quote`.
+- The status means only that a quotation can (or cannot) be located. It is not a claim of clinical truth or semantic correctness.
+- Do not calculate or display a single evidence confidence score.
+
+### AI draft provenance envelope
+
+The server-generated `aiBriefProvenance` envelope must bind the draft to the source narrative and include:
+
+- `intakeId`;
+- SHA-256 hash of the exact confirmed narrative;
+- SHA-256 hash of the canonical validated draft plus evidence metadata;
+- model ID, extraction schema version and evidence engine version;
+- creation timestamp;
+- HMAC-SHA-256 signature generated with a server-only secret.
+
+The HMAC secret is never stored in Firestore, exposed to the browser or committed. Signature verification proves envelope integrity and origin under the server key, not clinical correctness. This design must remain compatible with D-014/D-015: no Firebase Admin Firestore writes or IAM bypasses on Starter Tier; extraction is staff-triggered and draft persistence follows the approved staff-authorised Web SDK + Firestore Rules path with its required audit event.
+
+### Summary boundary
+
+The free-text `clinicianSummary` is an AI draft, not a field-level verified fact. Show it as a draft beside the original narrative and verified source quotations. Do not claim that every sentence has been mechanically verified. Sentence-level traceability requires a future versioned summary-segment schema.
