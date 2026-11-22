@@ -43,9 +43,8 @@ Voice input is a first-class P0 feature, not a decorative extra. Typed entry rem
 16. `15_DECISIONS_AND_RISKS.md`
 17. `16_SOURCES_AND_ATTRIBUTIONS.md`
 18. `17_SPRINT_LOG_AND_AI_DISCLOSURE.md`
-19. `18_DESIGN_SYSTEM_SPEC.md`
 
-The founder-approved visual source is `design-system/medflow-design-system.html`, with reusable product CSS in `design-system/design-tokens.css`. The HTML is a visual/interaction reference, not a live implementation. The product PRD, UX, data and safety documents govern behaviour.
+The founder will attach one standalone HTML design-system file directly to the Google AI Studio conversation. That attachment is the sole visual source of truth. No separate design-tokens file, extracted CSS token sheet or design-system specification is required. The PRD, UX, data and safety documents continue to govern product behaviour.
 
 ## 4. Source-of-truth rules
 
@@ -55,7 +54,7 @@ The founder-approved visual source is `design-system/medflow-design-system.html`
 - The PRD defines feature requirements and acceptance criteria.
 - The UX specification defines screen behaviour, user flows, interaction states and approved UI copy.
 - The data/API contract overrides ad hoc data structures in components.
-- The new HTML and CSS are authoritative for visual decisions only; they do not approve the TEWS/SATS algorithm or any other clinical behaviour embedded in the demo.
+- The attached HTML is authoritative for visual decisions only; it does not approve the TEWS/SATS algorithm or any other clinical behaviour shown in its demo.
 - `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md` defines the approved deterministic algorithm direction.
 - If two documents conflict, do not silently choose one. Record the conflict in `15_DECISIONS_AND_RISKS.md` and ask for resolution.
 - Never invent completed features, test results, clinical validation, hospital partnerships, user numbers or performance claims.
