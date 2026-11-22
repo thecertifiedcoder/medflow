@@ -31,6 +31,7 @@ export interface AlertProps {
   tone?: AlertTone;
   title?: string;
   icon?: IconName;
+  iconSpin?: boolean;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -40,18 +41,21 @@ export function Alert({
   tone = "info",
   title,
   icon,
+  iconSpin,
   action,
   children,
   className = "",
 }: AlertProps) {
   const isUrgent = tone === "danger" || tone === "warning";
+  const resolvedIcon = icon ?? DEFAULT_ICON[tone];
+  const shouldSpin = iconSpin ?? resolvedIcon === "loader";
 
   return (
     <div
       role={isUrgent ? "alert" : "status"}
       className={`mf-banner ${action ? "" : "mf-banner--simple"} ${TONE_CLASS[tone]} ${className}`.trim()}
     >
-      <Icon name={icon ?? DEFAULT_ICON[tone]} size="lg" />
+      <Icon name={resolvedIcon} size="lg" spin={shouldSpin} />
       <div className="min-w-0">
         {title ? <div className="mf-banner__title">{title}</div> : null}
         <div className="mf-banner__text">{children}</div>

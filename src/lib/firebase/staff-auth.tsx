@@ -5,22 +5,40 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
+  getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import {
+  AUTH_INIT_TIMEOUT_MS,
+  classifyRedirectResultError,
+  classifySignInError,
+  deriveProfileAuthorizationStatus,
+  extractFirebaseAuthErrorCode,
+  isEmbeddedInIframe,
+  isMobileUserAgent,
+  REDIRECT_PENDING_STORAGE_KEY,
+  sanitizeNonSecretAuthMessage,
+  SESSION_VERIFY_TIMEOUT_MS,
+  type AuthDiagnostics,
+  type StaffAuthStatus,
+} from "@/lib/firebase/auth-state";
 import {
   auth,
   db,
   googleProvider,
   testFirestoreConnection,
 } from "@/lib/firebase/client";
+import { firebaseAppletConfig } from "@/lib/firebase/config";
 import {
   handleFirestoreError,
   isOfflineError,
@@ -34,15 +52,11 @@ import {
   type StaffSessionResponse,
 } from "@/lib/schemas/staff";
 
-export type StaffAuthStatus =
-  | "loading"
-  | "unauthenticated"
-  | "verifying"
-  | "unverified_email"
-  | "unprovisioned"
-  | "inactive"
-  | "authorized"
-  | "error";
+export type {
+  AuthDiagnostics,
+  RedirectResultState,
+  StaffAuthStatus,
+} from "@/lib/firebase/auth-state";
 
 export interface StaffAuthState {
   readonly status: StaffAuthStatus;
@@ -57,8 +71,14 @@ export interface StaffAuthState {
   readonly activeFacilityId: string | null;
   readonly connectionReachable: boolean | null;
   readonly errorMessage: string | null;
+  readonly authNotice: string | null;
+  readonly authDiagnostics: AuthDiagnostics;
+  readonly canUseRedirectFallback: boolean;
+  readonly suggestOpenInStandaloneTab: boolean;
   readonly isSigningIn: boolean;
   readonly signInWithGoogle: () => Promise<void>;
+  readonly signInWithGoogleRedirect: () => Promise<void>;
+  readonly cancelSignInAttempt: () => void;
   readonly signOutStaff: () => Promise<void>;
   readonly refreshAuthorization: () => Promise<void>;
   readonly setActiveFacilityId: (facilityId: string) => void;
@@ -66,8 +86,43 @@ export interface StaffAuthState {
 
 const StaffAuthContext = createContext<StaffAuthState | null>(null);
 
+function readRedirectPendingFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(REDIRECT_PENDING_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeRedirectPendingFlag(pending: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (pending) {
+      window.sessionStorage.setItem(REDIRECT_PENDING_STORAGE_KEY, "1");
+    } else {
+      window.sessionStorage.removeItem(REDIRECT_PENDING_STORAGE_KEY);
+    }
+  } catch {
+    // Restricted storage inside embedded frames is safe to ignore.
+  }
+}
+
+function buildInitialDiagnostics(): AuthDiagnostics {
+  return {
+    lastErrorCode: null,
+    lastErrorSummary: null,
+    redirectResultState: "pending",
+    authStateResolved: false,
+    isEmbeddedIframe: false,
+    isMobileBrowser: false,
+    currentHost: null,
+    authDomain: firebaseAppletConfig.authDomain,
+  };
+}
+
 export function StaffAuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<StaffAuthStatus>("loading");
+  const [status, setStatus] = useState<StaffAuthStatus>("initializing");
   const [rawUser, setRawUser] = useState<User | null>(null);
   const [serverSession, setServerSession] =
     useState<StaffSessionResponse | null>(null);
@@ -79,34 +134,85 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     boolean | null
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [canUseRedirectFallback, setCanUseRedirectFallback] = useState(false);
+  const [suggestOpenInStandaloneTab, setSuggestOpenInStandaloneTab] =
+    useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnostics>(
+    buildInitialDiagnostics,
+  );
 
-  const verifyUserAndProfile = useCallback(async (user: User) => {
+  const verificationRunIdRef = useRef(0);
+  const verifyingUidRef = useRef<string | null>(null);
+  const activeUserUidRef = useRef<string | null>(null);
+  const authResolvedRef = useRef(false);
+  const statusRef = useRef<StaffAuthStatus>(status);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const verifyUserAndProfile = useCallback(async (user: User, force = false) => {
+    // Deduplicate concurrent verification triggers from signInWithPopup + onAuthStateChanged.
+    if (!force && verifyingUidRef.current === user.uid) {
+      return;
+    }
+
+    const runId = ++verificationRunIdRef.current;
+    verifyingUidRef.current = user.uid;
+    activeUserUidRef.current = user.uid;
+    setRawUser(user);
     setStatus("verifying");
     setErrorMessage(null);
+    setAuthNotice(null);
+    setCanUseRedirectFallback(false);
+    setSuggestOpenInStandaloneTab(false);
     setServerSession(null);
     setStaffProfile(null);
+    setAuthDiagnostics((prev) => ({
+      ...prev,
+      lastErrorCode: null,
+      lastErrorSummary: null,
+      authStateResolved: true,
+    }));
 
     if (!user.emailVerified) {
+      if (runId !== verificationRunIdRef.current) return;
+      verifyingUidRef.current = null;
       setStatus("unverified_email");
       return;
     }
 
+    const controller = new AbortController();
+    const timeoutHandle = window.setTimeout(
+      () => controller.abort(),
+      SESSION_VERIFY_TIMEOUT_MS,
+    );
+
     try {
       const idToken = await user.getIdToken();
+      if (runId !== verificationRunIdRef.current) return;
+
       const response = await fetch("/api/staff/session", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${idToken}`,
         },
         cache: "no-store",
+        signal: controller.signal,
       });
+
+      if (runId !== verificationRunIdRef.current) return;
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
           error?: { message?: string; code?: string };
         } | null;
-        if (response.status === 403 && body?.error?.code === "EMAIL_NOT_VERIFIED") {
+        if (
+          response.status === 403 &&
+          body?.error?.code === "EMAIL_NOT_VERIFIED"
+        ) {
           setStatus("unverified_email");
           return;
         }
@@ -121,6 +227,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       const parsedSession = StaffSessionResponseSchema.safeParse(
         await response.json(),
       );
+      if (runId !== verificationRunIdRef.current) return;
+
       if (!parsedSession.success || parsedSession.data.user.uid !== user.uid) {
         setErrorMessage("Unexpected server session verification response.");
         setStatus("error");
@@ -135,20 +243,31 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       try {
         snapshot = await getDoc(doc(db, "staff", user.uid));
       } catch (err) {
+        if (runId !== verificationRunIdRef.current) return;
         if (isOfflineError(err)) {
           setConnectionReachable(false);
           setErrorMessage(
-            "Unable to reach Firestore to verify staff provisioning.",
+            "Unable to reach Firestore to verify staff provisioning. Check your connection and retry.",
           );
           setStatus("error");
           return;
         }
         if (isPermissionDeniedError(err)) {
-          // Owner-only get denied only if email is unverified or rules rejected UID.
-          handleFirestoreError(err, OperationType.GET, staffPath, auth);
+          try {
+            handleFirestoreError(err, OperationType.GET, staffPath, auth);
+          } catch {
+            // Structured diagnostic logged by handleFirestoreError; surface a clean UI message.
+          }
+          setErrorMessage(
+            "Firestore denied reading your staff profile record. Confirm your Google email is verified and retry.",
+          );
+          setStatus("error");
+          return;
         }
         throw err;
       }
+
+      if (runId !== verificationRunIdRef.current) return;
 
       if (!snapshot.exists()) {
         setStaffProfile(null);
@@ -158,7 +277,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       }
 
       const parsedProfile = StaffProfileSchema.safeParse(snapshot.data());
-      if (!parsedProfile.success || parsedProfile.data.uid !== user.uid) {
+      if (!parsedProfile.success) {
         setErrorMessage(
           "Staff profile record exists but does not match the required MedFlow authorization schema.",
         );
@@ -169,91 +288,455 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       const profile = parsedProfile.data;
       setStaffProfile(profile);
 
-      if (!profile.active || profile.facilityIds.length === 0) {
-        setActiveFacilityIdState(null);
+      let nextFacilityId: string | null = null;
+      setActiveFacilityIdState((prev) => {
+        const result = deriveProfileAuthorizationStatus(profile, user.uid, prev);
+        nextFacilityId = result.activeFacilityId;
+        return nextFacilityId;
+      });
+
+      const decision = deriveProfileAuthorizationStatus(
+        profile,
+        user.uid,
+        nextFacilityId,
+      );
+      if (decision.status === "error") {
+        setErrorMessage(decision.errorMessage);
+        setStatus("error");
+        return;
+      }
+      if (decision.status === "inactive") {
         setStatus("inactive");
         return;
       }
 
-      setActiveFacilityIdState((prev) =>
-        prev && profile.facilityIds.includes(prev)
-          ? prev
-          : profile.facilityIds[0] ?? null,
-      );
       setStatus("authorized");
     } catch (err) {
-      setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : "Unable to verify staff authorization.",
-      );
+      if (runId !== verificationRunIdRef.current) return;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setErrorMessage(
+          "Session verification timed out before the server responded. Please retry.",
+        );
+      } else {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : "Unable to verify staff authorization.",
+        );
+      }
       setStatus("error");
+    } finally {
+      window.clearTimeout(timeoutHandle);
+      if (runId === verificationRunIdRef.current) {
+        verifyingUidRef.current = null;
+      }
     }
   }, []);
 
   useEffect(() => {
     let active = true;
-    testFirestoreConnection().then((result) => {
+    authResolvedRef.current = false;
+
+    const embedded = isEmbeddedInIframe();
+    const mobile = isMobileUserAgent();
+    const host =
+      typeof window !== "undefined" ? window.location.host : null;
+    const redirectWasPending = readRedirectPendingFlag();
+    let redirectSettled = !redirectWasPending;
+
+    // Background connectivity probe; never blocks auth initialization.
+    void testFirestoreConnection().then((result) => {
       if (active) {
         setConnectionReachable(result.reachable);
       }
     });
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!active) return;
-      setRawUser(user);
-      if (!user) {
-        setServerSession(null);
-        setStaffProfile(null);
-        setActiveFacilityIdState(null);
-        setErrorMessage(null);
-        setStatus("unauthenticated");
-        return;
-      }
-      void verifyUserAndProfile(user);
-    });
+    // Bounded initialization watchdog so the UI can never stay stuck indefinitely.
+    const initTimeoutId = window.setTimeout(() => {
+      if (!active || authResolvedRef.current) return;
+      writeRedirectPendingFlag(false);
+      setIsSigningIn(false);
+      setAuthDiagnostics((prev) => ({
+        ...prev,
+        isEmbeddedIframe: embedded,
+        isMobileBrowser: mobile,
+        currentHost: host,
+        lastErrorCode: "auth/init-timeout",
+        lastErrorSummary:
+          "Firebase onAuthStateChanged did not emit within the initialization window.",
+      }));
+      setErrorMessage(
+        "Authentication state took too long to initialize in this browser (auth/init-timeout). Retry session check or start Google Sign-In directly.",
+      );
+      setCanUseRedirectFallback(!embedded);
+      setSuggestOpenInStandaloneTab(embedded);
+      setStatus("error");
+    }, AUTH_INIT_TIMEOUT_MS);
+
+    // Resolve any pending Google redirect result without blocking onAuthStateChanged.
+    let redirectErrored = false;
+    void getRedirectResult(auth)
+      .then((result) => {
+        if (!active) return;
+        redirectSettled = true;
+        writeRedirectPendingFlag(false);
+
+        if (result?.user) {
+          authResolvedRef.current = true;
+          window.clearTimeout(initTimeoutId);
+          setIsSigningIn(false);
+          setAuthDiagnostics((prev) => ({
+            ...prev,
+            isEmbeddedIframe: embedded,
+            isMobileBrowser: mobile,
+            currentHost: host,
+            redirectResultState: "user",
+            authStateResolved: true,
+          }));
+          void verifyUserAndProfile(result.user);
+        } else if (redirectWasPending && !auth.currentUser) {
+          authResolvedRef.current = true;
+          window.clearTimeout(initTimeoutId);
+          setIsSigningIn(false);
+          setAuthDiagnostics((prev) => ({
+            ...prev,
+            isEmbeddedIframe: embedded,
+            isMobileBrowser: mobile,
+            currentHost: host,
+            redirectResultState: "null_after_pending",
+            authStateResolved: true,
+            lastErrorCode: "auth/redirect-result-empty",
+            lastErrorSummary:
+              "getRedirectResult(auth) returned null after returning from Google Sign-In.",
+          }));
+          console.warn(
+            "[MedFlow Auth] getRedirectResult returned null after pending redirect",
+            { embedded, mobile, host, authDomain: firebaseAppletConfig.authDomain },
+          );
+          setErrorMessage(
+            `Google redirect returned without a Firebase session (getRedirectResult returned null). Modern mobile browsers block cross-origin redirect storage between ${host ?? "this host"} and ${firebaseAppletConfig.authDomain}. Open /staff/login in a full browser tab and use popup sign-in.`,
+          );
+          setSuggestOpenInStandaloneTab(embedded);
+          setCanUseRedirectFallback(false);
+          setStatus("error");
+        } else {
+          setAuthDiagnostics((prev) => ({
+            ...prev,
+            isEmbeddedIframe: embedded,
+            isMobileBrowser: mobile,
+            currentHost: host,
+            redirectResultState: "none",
+          }));
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        redirectSettled = true;
+        redirectErrored = true;
+        authResolvedRef.current = true;
+        window.clearTimeout(initTimeoutId);
+        writeRedirectPendingFlag(false);
+        setIsSigningIn(false);
+        const classified = classifyRedirectResultError(err);
+        const summary = sanitizeNonSecretAuthMessage(err);
+        console.warn("[MedFlow Auth] getRedirectResult failed", {
+          code: classified.code,
+          embedded,
+          mobile,
+          host,
+        });
+        setAuthDiagnostics((prev) => ({
+          ...prev,
+          isEmbeddedIframe: embedded,
+          isMobileBrowser: mobile,
+          currentHost: host,
+          redirectResultState: "error",
+          authStateResolved: true,
+          lastErrorCode: classified.code,
+          lastErrorSummary: summary,
+        }));
+        setErrorMessage(classified.message);
+        setCanUseRedirectFallback(false);
+        setSuggestOpenInStandaloneTab(embedded);
+        setStatus("error");
+      });
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (!active) return;
+        if (!user && !redirectSettled) {
+          // Wait briefly for pending redirect credential exchange to settle.
+          return;
+        }
+        authResolvedRef.current = true;
+        window.clearTimeout(initTimeoutId);
+
+        setAuthDiagnostics((prev) => ({
+          ...prev,
+          isEmbeddedIframe: embedded,
+          isMobileBrowser: mobile,
+          currentHost: host,
+          authStateResolved: true,
+        }));
+
+        if (!user) {
+          activeUserUidRef.current = null;
+          verifyingUidRef.current = null;
+          verificationRunIdRef.current += 1;
+          setRawUser(null);
+          setServerSession(null);
+          setStaffProfile(null);
+          setActiveFacilityIdState(null);
+          setIsSigningIn(false);
+          if (!redirectErrored && statusRef.current !== "error") {
+            setStatus("unauthenticated");
+          }
+          return;
+        }
+
+        writeRedirectPendingFlag(false);
+        setIsSigningIn(false);
+        void verifyUserAndProfile(user);
+      },
+      (authError) => {
+        if (!active) return;
+        authResolvedRef.current = true;
+        window.clearTimeout(initTimeoutId);
+        writeRedirectPendingFlag(false);
+        setIsSigningIn(false);
+        const code = extractFirebaseAuthErrorCode(authError);
+        const summary = sanitizeNonSecretAuthMessage(authError);
+        console.warn("[MedFlow Auth] onAuthStateChanged error", {
+          code,
+          embedded,
+          mobile,
+          host,
+        });
+        setAuthDiagnostics((prev) => ({
+          ...prev,
+          isEmbeddedIframe: embedded,
+          isMobileBrowser: mobile,
+          currentHost: host,
+          authStateResolved: true,
+          lastErrorCode: code,
+          lastErrorSummary: summary,
+        }));
+        setErrorMessage(
+          `Firebase Authentication failed to initialize (${code}). Retry or open /staff/login in a full browser tab.`,
+        );
+        setSuggestOpenInStandaloneTab(embedded);
+        setStatus("error");
+      },
+    );
 
     return () => {
       active = false;
+      window.clearTimeout(initTimeoutId);
       unsubscribe();
     };
   }, [verifyUserAndProfile]);
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogleRedirect = useCallback(async () => {
+    const embedded = isEmbeddedInIframe();
+    const mobile = isMobileUserAgent();
+    const host =
+      typeof window !== "undefined" ? window.location.host : null;
+
     setIsSigningIn(true);
     setErrorMessage(null);
+    setAuthNotice("Redirecting to Google Sign-In...");
+    setCanUseRedirectFallback(false);
+    setSuggestOpenInStandaloneTab(false);
+    setStatus("authenticating");
+    writeRedirectPendingFlag(true);
+
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithRedirect(auth, googleProvider);
     } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: unknown }).code)
-          : "";
-      if (code === "auth/popup-closed-by-user") {
-        setErrorMessage("Sign-in window was closed before completing Google Sign-In.");
-      } else if (code === "auth/popup-blocked") {
-        setErrorMessage(
-          "Your browser blocked the Google Sign-In popup. Allow popups for this preview and try again.",
-        );
-      } else {
-        setErrorMessage("Google Sign-In could not be completed. Please try again.");
-      }
-    } finally {
+      writeRedirectPendingFlag(false);
       setIsSigningIn(false);
+      setAuthNotice(null);
+      const classified = classifyRedirectResultError(err);
+      const summary = sanitizeNonSecretAuthMessage(err);
+      console.warn("[MedFlow Auth] signInWithRedirect failed", {
+        code: classified.code,
+        embedded,
+        mobile,
+        host,
+      });
+      setAuthDiagnostics((prev) => ({
+        ...prev,
+        isEmbeddedIframe: embedded,
+        isMobileBrowser: mobile,
+        currentHost: host,
+        lastErrorCode: classified.code,
+        lastErrorSummary: summary,
+      }));
+      setErrorMessage(classified.message);
+      setSuggestOpenInStandaloneTab(embedded);
+      setStatus("error");
     }
   }, []);
 
-  const signOutStaff = useCallback(async () => {
+  const signInWithGoogle = useCallback(async () => {
+    const embedded = isEmbeddedInIframe();
+    const mobile = isMobileUserAgent();
+    const host =
+      typeof window !== "undefined" ? window.location.host : null;
+
+    setIsSigningIn(true);
     setErrorMessage(null);
-    await signOut(auth);
+    setAuthNotice(null);
+    setCanUseRedirectFallback(false);
+    setSuggestOpenInStandaloneTab(false);
+    setStatus("authenticating");
+
+    try {
+      const credential = await signInWithPopup(auth, googleProvider);
+      setIsSigningIn(false);
+      if (credential?.user) {
+        void verifyUserAndProfile(credential.user);
+      }
+    } catch (err) {
+      // Guard against race conditions where Firebase Auth already established
+      // a valid user session while the popup handle closed or was superseded.
+      if (auth.currentUser) {
+        setIsSigningIn(false);
+        void verifyUserAndProfile(auth.currentUser);
+        return;
+      }
+
+      const classified = classifySignInError(err, {
+        isEmbeddedIframe: embedded,
+        isMobileBrowser: mobile,
+      });
+      const summary = sanitizeNonSecretAuthMessage(err);
+
+      // Non-secret diagnostic log (never logs tokens or credentials).
+      console.warn("[MedFlow Auth] signInWithPopup failed", {
+        code: classified.code,
+        embedded,
+        mobile,
+        host,
+        authDomain: firebaseAppletConfig.authDomain,
+      });
+
+      setAuthDiagnostics((prev) => ({
+        ...prev,
+        isEmbeddedIframe: embedded,
+        isMobileBrowser: mobile,
+        currentHost: host,
+        lastErrorCode: classified.code,
+        lastErrorSummary: summary,
+      }));
+
+      if (classified.shouldAutoFallbackToRedirect) {
+        setAuthNotice(classified.message);
+        await signInWithGoogleRedirect();
+        return;
+      }
+
+      setIsSigningIn(false);
+      setCanUseRedirectFallback(classified.canOfferRedirectFallback);
+      setSuggestOpenInStandaloneTab(classified.suggestOpenInStandaloneTab);
+
+      if (activeUserUidRef.current) {
+        return;
+      }
+
+      if (classified.isCancellation) {
+        setErrorMessage(null);
+        setAuthNotice(classified.message);
+        setStatus("unauthenticated");
+      } else {
+        setAuthNotice(null);
+        setErrorMessage(classified.message);
+        setStatus("error");
+      }
+    }
+  }, [signInWithGoogleRedirect, verifyUserAndProfile]);
+
+  const cancelSignInAttempt = useCallback(() => {
+    writeRedirectPendingFlag(false);
+    setIsSigningIn(false);
+    setErrorMessage(null);
+    setAuthNotice(
+      "Sign-in attempt cancelled. Select Sign in with Google whenever you are ready to try again.",
+    );
+    if (auth.currentUser) {
+      void verifyUserAndProfile(auth.currentUser);
+    } else {
+      setStatus("unauthenticated");
+    }
+  }, [verifyUserAndProfile]);
+
+  const signOutStaff = useCallback(async () => {
+    verificationRunIdRef.current += 1;
+    verifyingUidRef.current = null;
+    activeUserUidRef.current = null;
+    writeRedirectPendingFlag(false);
+    setErrorMessage(null);
+    setAuthNotice(null);
+    setCanUseRedirectFallback(false);
+    setSuggestOpenInStandaloneTab(false);
+    setIsSigningIn(false);
+    try {
+      await signOut(auth);
+      setRawUser(null);
+      setServerSession(null);
+      setStaffProfile(null);
+      setActiveFacilityIdState(null);
+      setStatus("unauthenticated");
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "Unable to sign out cleanly. Please try again.",
+      );
+      setStatus("error");
+    }
   }, []);
 
   const refreshAuthorization = useCallback(async () => {
-    if (!auth.currentUser) {
-      setStatus("unauthenticated");
+    setErrorMessage(null);
+    setAuthNotice(null);
+    setCanUseRedirectFallback(false);
+    setSuggestOpenInStandaloneTab(false);
+
+    if (auth.currentUser) {
+      await verifyUserAndProfile(auth.currentUser, true);
       return;
     }
-    await verifyUserAndProfile(auth.currentUser);
+
+    // Re-check Firebase Auth readiness if initialization previously timed out or errored.
+    setStatus("initializing");
+    try {
+      await Promise.race([
+        auth.authStateReady(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("AUTH_INIT_TIMEOUT")),
+            AUTH_INIT_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      authResolvedRef.current = true;
+      if (auth.currentUser) {
+        await verifyUserAndProfile(auth.currentUser, true);
+      } else {
+        setRawUser(null);
+        setStatus("unauthenticated");
+      }
+    } catch {
+      const embedded = isEmbeddedInIframe();
+      setErrorMessage(
+        "Unable to confirm an existing authentication session. Start Google Sign-In directly below or open /staff/login in a full browser tab.",
+      );
+      setCanUseRedirectFallback(!embedded);
+      setSuggestOpenInStandaloneTab(embedded);
+      setStatus("error");
+    }
   }, [verifyUserAndProfile]);
 
   const setActiveFacilityId = useCallback(
@@ -284,8 +767,14 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         activeFacilityId,
         connectionReachable,
         errorMessage,
+        authNotice,
+        authDiagnostics,
+        canUseRedirectFallback,
+        suggestOpenInStandaloneTab,
         isSigningIn,
         signInWithGoogle,
+        signInWithGoogleRedirect,
+        cancelSignInAttempt,
         signOutStaff,
         refreshAuthorization,
         setActiveFacilityId,

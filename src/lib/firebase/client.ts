@@ -1,7 +1,17 @@
 "use client";
 
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  getAuth,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  inMemoryPersistence,
+  type Auth,
+} from "firebase/auth";
 import {
   doc,
   getDocFromServer,
@@ -24,7 +34,30 @@ export const db: Firestore = getFirestore(
   firebaseAppletConfig.firestoreDatabaseId,
 );
 
-export const auth: Auth = getAuth(app);
+function createClientAuth(firebaseApp: FirebaseApp): Auth {
+  if (typeof window === "undefined") {
+    return getAuth(firebaseApp);
+  }
+  try {
+    // Cascade through browser storage backends and end with inMemoryPersistence
+    // so mobile browsers or cross-origin Preview iframes with blocked/partitioned
+    // IndexedDB/localStorage do not stall Auth initialization.
+    return initializeAuth(firebaseApp, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+        inMemoryPersistence,
+      ],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    // Already initialized (e.g., module re-evaluation during dev navigation).
+    return getAuth(firebaseApp);
+  }
+}
+
+export const auth: Auth = createClientAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({

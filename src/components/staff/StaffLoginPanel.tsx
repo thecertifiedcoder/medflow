@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Alert,
   Badge,
@@ -18,8 +19,14 @@ export function StaffLoginPanel() {
     activeFacilityId,
     connectionReachable,
     errorMessage,
+    authNotice,
+    authDiagnostics,
+    canUseRedirectFallback,
+    suggestOpenInStandaloneTab,
     isSigningIn,
     signInWithGoogle,
+    signInWithGoogleRedirect,
+    cancelSignInAttempt,
     signOutStaff,
     refreshAuthorization,
   } = useStaffAuth();
@@ -52,11 +59,88 @@ export function StaffLoginPanel() {
         </Alert>
       )}
 
-      {(status === "loading" || status === "verifying") && (
-        <Alert tone="info" icon="loader" title="Verifying session">
-          {status === "loading"
-            ? "Checking existing authentication state..."
-            : "Verifying Firebase ID token signature on the server and reading your provisioned staff profile..."}
+      {authNotice && !errorMessage && (
+        <Alert tone="info" title="Sign-in status">
+          {authNotice}
+        </Alert>
+      )}
+
+      {authDiagnostics.lastErrorCode &&
+        (status === "error" || status === "unauthenticated") && (
+          <div className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
+            <p className="mf-t-label m-0 mb-2 font-semibold text-[var(--mf-text)]">
+              Authentication diagnostic details (non-secret)
+            </p>
+            <dl className="mf-dl m-0">
+              <dt>Firebase error code</dt>
+              <dd className="mf-mono text-[13px]">
+                {authDiagnostics.lastErrorCode}
+              </dd>
+              <dt>Browser context</dt>
+              <dd className="mf-mono text-[13px]">
+                {authDiagnostics.isEmbeddedIframe
+                  ? "Embedded iframe"
+                  : "Standalone tab"}{" "}
+                · {authDiagnostics.isMobileBrowser ? "Mobile" : "Desktop"}
+              </dd>
+              <dt>Redirect result</dt>
+              <dd className="mf-mono text-[13px]">
+                {authDiagnostics.redirectResultState}
+              </dd>
+              <dt>Origin / Auth domain</dt>
+              <dd className="mf-mono break-all text-[13px]">
+                {authDiagnostics.currentHost ?? "Unavailable"} →{" "}
+                {authDiagnostics.authDomain}
+              </dd>
+            </dl>
+          </div>
+        )}
+
+      {status === "initializing" && (
+        <div className="grid gap-3">
+          <Alert
+            tone="info"
+            icon="loader"
+            iconSpin
+            title="Checking authentication state"
+          >
+            Checking whether a Firebase clinical staff session is already active
+            in this browser...
+          </Alert>
+        </div>
+      )}
+
+      {status === "authenticating" && (
+        <div className="grid gap-4">
+          <Alert
+            tone="info"
+            icon="loader"
+            iconSpin
+            title="Signing in with Google"
+          >
+            Complete Google authentication in the sign-in window. If your mobile
+            browser blocked or closed the window without returning a session,
+            cancel and open sign-in in a full browser tab.
+          </Alert>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="primary" size="md" loading disabled>
+              Waiting for Google Sign-In...
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={cancelSignInAttempt}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {status === "verifying" && (
+        <Alert tone="info" icon="loader" iconSpin title="Verifying session">
+          Verifying your Firebase ID token signature on the server and reading
+          your provisioned staff profile...
         </Alert>
       )}
 
@@ -81,6 +165,16 @@ export function StaffLoginPanel() {
               {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
               {isSigningIn ? "Opening Google Sign-In..." : "Sign in with Google"}
             </Button>
+            {canUseRedirectFallback && (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => void signInWithGoogleRedirect()}
+                disabled={isSigningIn}
+              >
+                Use redirect sign-in
+              </Button>
+            )}
             <ButtonLink href="/" variant="secondary" size="md">
               <Icon name="arrowLeft" size="btn" />
               Back to overview
@@ -199,31 +293,66 @@ export function StaffLoginPanel() {
 
       {status === "error" && (
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => void refreshAuthorization()}
-          >
-            Retry verification
-          </Button>
           {firebaseUser ? (
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => void signOutStaff()}
-            >
-              Sign out
-            </Button>
+            <>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => void refreshAuthorization()}
+              >
+                <Icon name="refresh" size="btn" />
+                Retry verification
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => void signOutStaff()}
+              >
+                Sign out
+              </Button>
+            </>
           ) : (
-            <Button
-              variant="secondary"
-              size="md"
-              loading={isSigningIn}
-              onClick={() => void signInWithGoogle()}
-              disabled={isSigningIn}
-            >
-              Try Google Sign-In again
-            </Button>
+            <>
+              {suggestOpenInStandaloneTab && (
+                <Link
+                  href="/staff/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mf-btn mf-btn--primary mf-btn--md"
+                >
+                  <Icon name="arrow" size="btn" />
+                  Open sign-in in full browser tab
+                </Link>
+              )}
+              <Button
+                variant={suggestOpenInStandaloneTab ? "secondary" : "primary"}
+                size="md"
+                loading={isSigningIn}
+                onClick={() => void signInWithGoogle()}
+                disabled={isSigningIn}
+              >
+                {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
+                Sign in with Google
+              </Button>
+              {canUseRedirectFallback && (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => void signInWithGoogleRedirect()}
+                  disabled={isSigningIn}
+                >
+                  Use redirect sign-in
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => void refreshAuthorization()}
+              >
+                <Icon name="refresh" size="btn" />
+                Retry session check
+              </Button>
+            </>
           )}
         </div>
       )}

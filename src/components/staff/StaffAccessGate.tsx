@@ -41,7 +41,11 @@ export function StaffAccessGate({
     refreshAuthorization,
   } = useStaffAuth();
 
-  if (status === "loading" || status === "verifying") {
+  if (
+    status === "initializing" ||
+    status === "authenticating" ||
+    status === "verifying"
+  ) {
     return (
       <PageContainer width="narrow">
         <div className="mb-6 grid gap-1.5">
@@ -58,9 +62,11 @@ export function StaffAccessGate({
           source="nurse"
           sourceLabel="Session check"
           title={
-            status === "loading"
+            status === "initializing"
               ? "Checking staff session"
-              : "Verifying clinical authorization"
+              : status === "authenticating"
+                ? "Completing Google Sign-In"
+                : "Verifying clinical authorization"
           }
         >
           <div className="flex items-start gap-3">
@@ -71,8 +77,11 @@ export function StaffAccessGate({
               className="mt-0.5 text-[var(--mf-primary-dark)]"
             />
             <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
-              Validating Firebase ID token signature on the server and checking
-              provisioned facility membership in Firestore.
+              {status === "initializing"
+                ? "Checking whether a Firebase authentication session is already active in this browser..."
+                : status === "authenticating"
+                  ? "Completing Google Sign-In before verifying your clinical staff authorization..."
+                  : "Validating Firebase ID token signature on the server and checking provisioned facility membership in Firestore."}
             </p>
           </div>
         </ClinicalPanel>

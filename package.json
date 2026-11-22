@@ -9,7 +9,7 @@
     "start": "next start -H 0.0.0.0",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/schemas/intake.test.ts src/lib/env/config.test.ts src/lib/firebase/security-rules.test.ts"
+    "test": "tsx --test src/lib/schemas/intake.test.ts src/lib/env/config.test.ts src/lib/firebase/security-rules.test.ts src/lib/firebase/auth-state.test.ts"
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
