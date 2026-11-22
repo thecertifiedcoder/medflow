@@ -18,12 +18,31 @@ import {
   getFirestore,
   type Firestore,
 } from "firebase/firestore";
+import { resolveEffectiveAuthDomain } from "@/lib/firebase/auth-state";
 import { firebaseAppletConfig } from "@/lib/firebase/config";
 import { isOfflineError } from "@/lib/firebase/errors";
 
+const authDomainResolution = resolveEffectiveAuthDomain({
+  configuredAuthDomain: firebaseAppletConfig.authDomain,
+  currentHost: typeof window !== "undefined" ? window.location.host : null,
+  currentProtocol:
+    typeof window !== "undefined" ? window.location.protocol : null,
+  forceSameOrigin:
+    process.env.NEXT_PUBLIC_FIREBASE_SAME_ORIGIN_AUTH_DOMAIN === "true",
+});
+
+export const effectiveAuthDomain: string = authDomainResolution.authDomain;
+export const usesSameOriginAuthProxy: boolean =
+  authDomainResolution.usesSameOriginProxy;
+
+const clientFirebaseConfig = {
+  ...firebaseAppletConfig,
+  authDomain: effectiveAuthDomain,
+};
+
 const app: FirebaseApp = getApps().length
   ? getApp()
-  : initializeApp(firebaseAppletConfig);
+  : initializeApp(clientFirebaseConfig);
 
 /**
  * CRITICAL: Pass firebaseAppletConfig.firestoreDatabaseId explicitly to connect

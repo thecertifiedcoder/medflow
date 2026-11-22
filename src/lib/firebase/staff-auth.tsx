@@ -28,17 +28,20 @@ import {
   isMobileUserAgent,
   REDIRECT_PENDING_STORAGE_KEY,
   sanitizeNonSecretAuthMessage,
+  selectPreferredSignInMethod,
   SESSION_VERIFY_TIMEOUT_MS,
   type AuthDiagnostics,
+  type GoogleSignInMethod,
   type StaffAuthStatus,
 } from "@/lib/firebase/auth-state";
 import {
   auth,
   db,
+  effectiveAuthDomain,
   googleProvider,
   testFirestoreConnection,
+  usesSameOriginAuthProxy,
 } from "@/lib/firebase/client";
-import { firebaseAppletConfig } from "@/lib/firebase/config";
 import {
   handleFirestoreError,
   isOfflineError,
@@ -54,6 +57,7 @@ import {
 
 export type {
   AuthDiagnostics,
+  GoogleSignInMethod,
   RedirectResultState,
   StaffAuthStatus,
 } from "@/lib/firebase/auth-state";
@@ -73,10 +77,12 @@ export interface StaffAuthState {
   readonly errorMessage: string | null;
   readonly authNotice: string | null;
   readonly authDiagnostics: AuthDiagnostics;
+  readonly preferredSignInMethod: GoogleSignInMethod;
   readonly canUseRedirectFallback: boolean;
   readonly suggestOpenInStandaloneTab: boolean;
   readonly isSigningIn: boolean;
   readonly signInWithGoogle: () => Promise<void>;
+  readonly signInWithGooglePopup: () => Promise<void>;
   readonly signInWithGoogleRedirect: () => Promise<void>;
   readonly cancelSignInAttempt: () => void;
   readonly signOutStaff: () => Promise<void>;
@@ -117,7 +123,8 @@ function buildInitialDiagnostics(): AuthDiagnostics {
     isEmbeddedIframe: false,
     isMobileBrowser: false,
     currentHost: null,
-    authDomain: firebaseAppletConfig.authDomain,
+    authDomain: effectiveAuthDomain,
+    usesSameOriginProxy: usesSameOriginAuthProxy,
   };
 }
 
@@ -146,6 +153,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const verificationRunIdRef = useRef(0);
   const verifyingUidRef = useRef<string | null>(null);
   const activeUserUidRef = useRef<string | null>(null);
+  const authAttemptInFlightRef = useRef(false);
   const authResolvedRef = useRef(false);
   const statusRef = useRef<StaffAuthStatus>(status);
 
@@ -154,7 +162,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   }, [status]);
 
   const verifyUserAndProfile = useCallback(async (user: User, force = false) => {
-    // Deduplicate concurrent verification triggers from signInWithPopup + onAuthStateChanged.
+    // Deduplicate concurrent verification triggers from signInWithPopup / getRedirectResult / onAuthStateChanged.
     if (!force && verifyingUidRef.current === user.uid) {
       return;
     }
@@ -162,6 +170,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     const runId = ++verificationRunIdRef.current;
     verifyingUidRef.current = user.uid;
     activeUserUidRef.current = user.uid;
+    authAttemptInFlightRef.current = false;
     setRawUser(user);
     setStatus("verifying");
     setErrorMessage(null);
@@ -355,12 +364,15 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     const initTimeoutId = window.setTimeout(() => {
       if (!active || authResolvedRef.current) return;
       writeRedirectPendingFlag(false);
+      authAttemptInFlightRef.current = false;
       setIsSigningIn(false);
       setAuthDiagnostics((prev) => ({
         ...prev,
         isEmbeddedIframe: embedded,
         isMobileBrowser: mobile,
         currentHost: host,
+        authDomain: effectiveAuthDomain,
+        usesSameOriginProxy: usesSameOriginAuthProxy,
         lastErrorCode: "auth/init-timeout",
         lastErrorSummary:
           "Firebase onAuthStateChanged did not emit within the initialization window.",
@@ -384,12 +396,15 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         if (result?.user) {
           authResolvedRef.current = true;
           window.clearTimeout(initTimeoutId);
+          authAttemptInFlightRef.current = false;
           setIsSigningIn(false);
           setAuthDiagnostics((prev) => ({
             ...prev,
             isEmbeddedIframe: embedded,
             isMobileBrowser: mobile,
             currentHost: host,
+            authDomain: effectiveAuthDomain,
+            usesSameOriginProxy: usesSameOriginAuthProxy,
             redirectResultState: "user",
             authStateResolved: true,
           }));
@@ -397,12 +412,15 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         } else if (redirectWasPending && !auth.currentUser) {
           authResolvedRef.current = true;
           window.clearTimeout(initTimeoutId);
+          authAttemptInFlightRef.current = false;
           setIsSigningIn(false);
           setAuthDiagnostics((prev) => ({
             ...prev,
             isEmbeddedIframe: embedded,
             isMobileBrowser: mobile,
             currentHost: host,
+            authDomain: effectiveAuthDomain,
+            usesSameOriginProxy: usesSameOriginAuthProxy,
             redirectResultState: "null_after_pending",
             authStateResolved: true,
             lastErrorCode: "auth/redirect-result-empty",
@@ -411,13 +429,21 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           }));
           console.warn(
             "[MedFlow Auth] getRedirectResult returned null after pending redirect",
-            { embedded, mobile, host, authDomain: firebaseAppletConfig.authDomain },
+            {
+              embedded,
+              mobile,
+              host,
+              authDomain: effectiveAuthDomain,
+              usesSameOriginProxy: usesSameOriginAuthProxy,
+            },
           );
           setErrorMessage(
-            `Google redirect returned without a Firebase session (getRedirectResult returned null). Modern mobile browsers block cross-origin redirect storage between ${host ?? "this host"} and ${firebaseAppletConfig.authDomain}. Open /staff/login in a full browser tab and use popup sign-in.`,
+            usesSameOriginAuthProxy
+              ? "Returned from Google Sign-In without an active session (getRedirectResult returned null). If you went back before completing Google Sign-In, try again below."
+              : `Google redirect returned without a Firebase session (getRedirectResult returned null) across ${host ?? "this host"} → ${effectiveAuthDomain}. Open /staff/login in a standalone browser tab and retry.`,
           );
           setSuggestOpenInStandaloneTab(embedded);
-          setCanUseRedirectFallback(false);
+          setCanUseRedirectFallback(!embedded);
           setStatus("error");
         } else {
           setAuthDiagnostics((prev) => ({
@@ -425,6 +451,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
             isEmbeddedIframe: embedded,
             isMobileBrowser: mobile,
             currentHost: host,
+            authDomain: effectiveAuthDomain,
+            usesSameOriginProxy: usesSameOriginAuthProxy,
             redirectResultState: "none",
           }));
         }
@@ -436,6 +464,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         authResolvedRef.current = true;
         window.clearTimeout(initTimeoutId);
         writeRedirectPendingFlag(false);
+        authAttemptInFlightRef.current = false;
         setIsSigningIn(false);
         const classified = classifyRedirectResultError(err);
         const summary = sanitizeNonSecretAuthMessage(err);
@@ -444,21 +473,30 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           embedded,
           mobile,
           host,
+          authDomain: effectiveAuthDomain,
         });
         setAuthDiagnostics((prev) => ({
           ...prev,
           isEmbeddedIframe: embedded,
           isMobileBrowser: mobile,
           currentHost: host,
+          authDomain: effectiveAuthDomain,
+          usesSameOriginProxy: usesSameOriginAuthProxy,
           redirectResultState: "error",
           authStateResolved: true,
           lastErrorCode: classified.code,
           lastErrorSummary: summary,
         }));
-        setErrorMessage(classified.message);
-        setCanUseRedirectFallback(false);
-        setSuggestOpenInStandaloneTab(embedded);
-        setStatus("error");
+        if (classified.isCancellation) {
+          setErrorMessage(null);
+          setAuthNotice(classified.message);
+          setStatus("unauthenticated");
+        } else {
+          setErrorMessage(classified.message);
+          setCanUseRedirectFallback(false);
+          setSuggestOpenInStandaloneTab(embedded);
+          setStatus("error");
+        }
       });
 
     const unsubscribe = onAuthStateChanged(
@@ -477,6 +515,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           isEmbeddedIframe: embedded,
           isMobileBrowser: mobile,
           currentHost: host,
+          authDomain: effectiveAuthDomain,
+          usesSameOriginProxy: usesSameOriginAuthProxy,
           authStateResolved: true,
         }));
 
@@ -484,6 +524,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           activeUserUidRef.current = null;
           verifyingUidRef.current = null;
           verificationRunIdRef.current += 1;
+          authAttemptInFlightRef.current = false;
           setRawUser(null);
           setServerSession(null);
           setStaffProfile(null);
@@ -496,6 +537,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         }
 
         writeRedirectPendingFlag(false);
+        authAttemptInFlightRef.current = false;
         setIsSigningIn(false);
         void verifyUserAndProfile(user);
       },
@@ -504,6 +546,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         authResolvedRef.current = true;
         window.clearTimeout(initTimeoutId);
         writeRedirectPendingFlag(false);
+        authAttemptInFlightRef.current = false;
         setIsSigningIn(false);
         const code = extractFirebaseAuthErrorCode(authError);
         const summary = sanitizeNonSecretAuthMessage(authError);
@@ -518,6 +561,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           isEmbeddedIframe: embedded,
           isMobileBrowser: mobile,
           currentHost: host,
+          authDomain: effectiveAuthDomain,
+          usesSameOriginProxy: usesSameOriginAuthProxy,
           authStateResolved: true,
           lastErrorCode: code,
           lastErrorSummary: summary,
@@ -537,12 +582,13 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [verifyUserAndProfile]);
 
-  const signInWithGoogleRedirect = useCallback(async () => {
+  const startRedirectSignIn = useCallback(async () => {
     const embedded = isEmbeddedInIframe();
     const mobile = isMobileUserAgent();
     const host =
       typeof window !== "undefined" ? window.location.host : null;
 
+    authAttemptInFlightRef.current = true;
     setIsSigningIn(true);
     setErrorMessage(null);
     setAuthNotice("Redirecting to Google Sign-In...");
@@ -554,6 +600,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     try {
       await signInWithRedirect(auth, googleProvider);
     } catch (err) {
+      authAttemptInFlightRef.current = false;
       writeRedirectPendingFlag(false);
       setIsSigningIn(false);
       setAuthNotice(null);
@@ -564,12 +611,15 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         embedded,
         mobile,
         host,
+        authDomain: effectiveAuthDomain,
       });
       setAuthDiagnostics((prev) => ({
         ...prev,
         isEmbeddedIframe: embedded,
         isMobileBrowser: mobile,
         currentHost: host,
+        authDomain: effectiveAuthDomain,
+        usesSameOriginProxy: usesSameOriginAuthProxy,
         lastErrorCode: classified.code,
         lastErrorSummary: summary,
       }));
@@ -579,12 +629,20 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogleRedirect = useCallback(async () => {
+    if (authAttemptInFlightRef.current) return;
+    await startRedirectSignIn();
+  }, [startRedirectSignIn]);
+
+  const signInWithGooglePopup = useCallback(async () => {
+    if (authAttemptInFlightRef.current) return;
+
     const embedded = isEmbeddedInIframe();
     const mobile = isMobileUserAgent();
     const host =
       typeof window !== "undefined" ? window.location.host : null;
 
+    authAttemptInFlightRef.current = true;
     setIsSigningIn(true);
     setErrorMessage(null);
     setAuthNotice(null);
@@ -594,6 +652,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const credential = await signInWithPopup(auth, googleProvider);
+      authAttemptInFlightRef.current = false;
       setIsSigningIn(false);
       if (credential?.user) {
         void verifyUserAndProfile(credential.user);
@@ -602,6 +661,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       // Guard against race conditions where Firebase Auth already established
       // a valid user session while the popup handle closed or was superseded.
       if (auth.currentUser) {
+        authAttemptInFlightRef.current = false;
         setIsSigningIn(false);
         void verifyUserAndProfile(auth.currentUser);
         return;
@@ -619,7 +679,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         embedded,
         mobile,
         host,
-        authDomain: firebaseAppletConfig.authDomain,
+        authDomain: effectiveAuthDomain,
+        usesSameOriginProxy: usesSameOriginAuthProxy,
       });
 
       setAuthDiagnostics((prev) => ({
@@ -627,16 +688,19 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         isEmbeddedIframe: embedded,
         isMobileBrowser: mobile,
         currentHost: host,
+        authDomain: effectiveAuthDomain,
+        usesSameOriginProxy: usesSameOriginAuthProxy,
         lastErrorCode: classified.code,
         lastErrorSummary: summary,
       }));
 
       if (classified.shouldAutoFallbackToRedirect) {
         setAuthNotice(classified.message);
-        await signInWithGoogleRedirect();
+        await startRedirectSignIn();
         return;
       }
 
+      authAttemptInFlightRef.current = false;
       setIsSigningIn(false);
       setCanUseRedirectFallback(classified.canOfferRedirectFallback);
       setSuggestOpenInStandaloneTab(classified.suggestOpenInStandaloneTab);
@@ -655,9 +719,28 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         setStatus("error");
       }
     }
-  }, [signInWithGoogleRedirect, verifyUserAndProfile]);
+  }, [startRedirectSignIn, verifyUserAndProfile]);
+
+  const signInWithGoogle = useCallback(async () => {
+    if (authAttemptInFlightRef.current) return;
+    const embedded = isEmbeddedInIframe();
+    const mobile = isMobileUserAgent();
+    const preferredMethod = selectPreferredSignInMethod({
+      isEmbeddedIframe: embedded,
+      isMobileBrowser: mobile,
+      usesSameOriginProxy: usesSameOriginAuthProxy,
+    });
+
+    if (preferredMethod === "redirect") {
+      await startRedirectSignIn();
+      return;
+    }
+
+    await signInWithGooglePopup();
+  }, [signInWithGooglePopup, startRedirectSignIn]);
 
   const cancelSignInAttempt = useCallback(() => {
+    authAttemptInFlightRef.current = false;
     writeRedirectPendingFlag(false);
     setIsSigningIn(false);
     setErrorMessage(null);
@@ -675,6 +758,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     verificationRunIdRef.current += 1;
     verifyingUidRef.current = null;
     activeUserUidRef.current = null;
+    authAttemptInFlightRef.current = false;
     writeRedirectPendingFlag(false);
     setErrorMessage(null);
     setAuthNotice(null);
@@ -709,7 +793,6 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Re-check Firebase Auth readiness if initialization previously timed out or errored.
     setStatus("initializing");
     try {
       await Promise.race([
@@ -748,6 +831,12 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     [staffProfile],
   );
 
+  const preferredSignInMethod = selectPreferredSignInMethod({
+    isEmbeddedIframe: authDiagnostics.isEmbeddedIframe,
+    isMobileBrowser: authDiagnostics.isMobileBrowser,
+    usesSameOriginProxy: authDiagnostics.usesSameOriginProxy,
+  });
+
   const firebaseUser = rawUser
     ? {
         uid: rawUser.uid,
@@ -769,10 +858,12 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         errorMessage,
         authNotice,
         authDiagnostics,
+        preferredSignInMethod,
         canUseRedirectFallback,
         suggestOpenInStandaloneTab,
         isSigningIn,
         signInWithGoogle,
+        signInWithGooglePopup,
         signInWithGoogleRedirect,
         cancelSignInAttempt,
         signOutStaff,

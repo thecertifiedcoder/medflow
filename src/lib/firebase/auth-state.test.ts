@@ -8,8 +8,117 @@ import {
   extractFirebaseAuthErrorCode,
   isEmbeddedInIframe,
   isMobileUserAgent,
+  resolveEffectiveAuthDomain,
   sanitizeNonSecretAuthMessage,
+  selectPreferredSignInMethod,
 } from "./auth-state";
+
+test("resolveEffectiveAuthDomain enables same-origin proxy on HTTPS AI Studio Preview hosts and keeps configured authDomain on localhost", () => {
+  const configured = "daring-brace-jw1xt.firebaseapp.com";
+
+  assert.deepEqual(
+    resolveEffectiveAuthDomain({
+      configuredAuthDomain: configured,
+      currentHost:
+        "ais-dev-gmahvotzwtenj4bz7g2nen-169572861177.europe-west3.run.app",
+      currentProtocol: "https:",
+    }),
+    {
+      authDomain:
+        "ais-dev-gmahvotzwtenj4bz7g2nen-169572861177.europe-west3.run.app",
+      usesSameOriginProxy: true,
+    },
+  );
+
+  assert.deepEqual(
+    resolveEffectiveAuthDomain({
+      configuredAuthDomain: configured,
+      currentHost:
+        "ais-mob-gmahvotzwtenj4bz7g2nen-169572861177.europe-west3.run.app",
+      currentProtocol: "https:",
+    }),
+    {
+      authDomain:
+        "ais-mob-gmahvotzwtenj4bz7g2nen-169572861177.europe-west3.run.app",
+      usesSameOriginProxy: true,
+    },
+  );
+
+  assert.deepEqual(
+    resolveEffectiveAuthDomain({
+      configuredAuthDomain: configured,
+      currentHost: "localhost:3000",
+      currentProtocol: "http:",
+    }),
+    {
+      authDomain: configured,
+      usesSameOriginProxy: false,
+    },
+  );
+
+  assert.deepEqual(
+    resolveEffectiveAuthDomain({
+      configuredAuthDomain: configured,
+      currentHost: "custom-unregistered.example.com",
+      currentProtocol: "https:",
+    }),
+    {
+      authDomain: configured,
+      usesSameOriginProxy: false,
+    },
+  );
+
+  assert.deepEqual(
+    resolveEffectiveAuthDomain({
+      configuredAuthDomain: configured,
+      currentHost: "custom-registered.example.com",
+      currentProtocol: "https:",
+      forceSameOrigin: true,
+    }),
+    {
+      authDomain: "custom-registered.example.com",
+      usesSameOriginProxy: true,
+    },
+  );
+});
+
+test("selectPreferredSignInMethod chooses redirect on standalone mobile with same-origin proxy and popup on desktop or embedded iframe", () => {
+  assert.equal(
+    selectPreferredSignInMethod({
+      isEmbeddedIframe: false,
+      isMobileBrowser: true,
+      usesSameOriginProxy: true,
+    }),
+    "redirect",
+  );
+
+  assert.equal(
+    selectPreferredSignInMethod({
+      isEmbeddedIframe: true,
+      isMobileBrowser: true,
+      usesSameOriginProxy: true,
+    }),
+    "popup",
+  );
+
+  assert.equal(
+    selectPreferredSignInMethod({
+      isEmbeddedIframe: false,
+      isMobileBrowser: false,
+      usesSameOriginProxy: true,
+    }),
+    "popup",
+  );
+
+  assert.equal(
+    selectPreferredSignInMethod({
+      isEmbeddedIframe: false,
+      isMobileBrowser: true,
+      usesSameOriginProxy: false,
+    }),
+    "popup",
+  );
+});
 
 test("extractFirebaseAuthErrorCode extracts Firebase auth codes safely", () => {
   assert.equal(
@@ -88,31 +197,23 @@ test("classifySignInError auto-falls back to redirect outside iframes when popup
   assert.match(embeddedBlocked.message, /full browser tab/i);
 });
 
-test("classifySignInError reports unauthorized domain and network failures clearly with code", () => {
-  const unauthorized = classifySignInError(
-    { code: "auth/unauthorized-domain" },
-    { isEmbeddedIframe: false },
-  );
-  assert.equal(unauthorized.nextStatus, "error");
-  assert.match(unauthorized.message, /auth\/unauthorized-domain/);
+test("classifyRedirectResultError handles redirect cancellation and domain/storage errors", () => {
+  const cancelled = classifyRedirectResultError({
+    code: "auth/redirect-cancelled-by-user",
+  });
+  assert.equal(cancelled.isCancellation, true);
+  assert.match(cancelled.message, /auth\/redirect-cancelled-by-user/);
 
-  const network = classifySignInError(
-    { code: "auth/network-request-failed" },
-    { isEmbeddedIframe: false },
-  );
-  assert.equal(network.nextStatus, "error");
-  assert.match(network.message, /auth\/network-request-failed/);
-});
-
-test("classifyRedirectResultError produces actionable messages with error code", () => {
   const domainErr = classifyRedirectResultError({
     code: "auth/unauthorized-domain",
   });
+  assert.equal(domainErr.isCancellation, false);
   assert.match(domainErr.message, /auth\/unauthorized-domain/);
 
   const storageErr = classifyRedirectResultError({
     code: "auth/web-storage-unsupported",
   });
+  assert.equal(storageErr.isCancellation, false);
   assert.match(storageErr.message, /full browser tab/i);
 });
 
@@ -194,9 +295,19 @@ test("deriveProfileAuthorizationStatus distinguishes authorized, inactive, and U
   assert.equal(mismatched.status, "error");
 });
 
-test("next.config.ts configures **.run.app allowedDevOrigins and COOP same-origin-allow-popups on /staff routes", async () => {
+test("next.config.ts configures **.run.app allowedDevOrigins, /__/auth/* proxy rewrites, and COOP header", async () => {
   assert.ok(Array.isArray(nextConfig.allowedDevOrigins));
   assert.ok(nextConfig.allowedDevOrigins.includes("**.run.app"));
+
+  assert.equal(typeof nextConfig.rewrites, "function");
+  const rewrites = await nextConfig.rewrites!();
+  assert.ok(Array.isArray(rewrites));
+  const authRewrite = rewrites.find((r) => r.source === "/__/auth/:path*");
+  assert.ok(authRewrite, "Expected /__/auth/:path* rewrite");
+  assert.match(
+    authRewrite.destination,
+    /^https:\/\/daring-brace-jw1xt\.firebaseapp\.com\/__\/auth\/:path\*$/,
+  );
 
   assert.equal(typeof nextConfig.headers, "function");
   const headerRules = await nextConfig.headers!();

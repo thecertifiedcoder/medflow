@@ -11,6 +11,8 @@ export type StaffAuthStatus =
   | "authorized"
   | "error";
 
+export type GoogleSignInMethod = "popup" | "redirect";
+
 export type RedirectResultState =
   | "pending"
   | "none"
@@ -27,11 +29,81 @@ export interface AuthDiagnostics {
   readonly isMobileBrowser: boolean;
   readonly currentHost: string | null;
   readonly authDomain: string;
+  readonly usesSameOriginProxy: boolean;
 }
 
 export const AUTH_INIT_TIMEOUT_MS = 8_000;
 export const SESSION_VERIFY_TIMEOUT_MS = 12_000;
 export const REDIRECT_PENDING_STORAGE_KEY = "medflow_google_redirect_pending";
+
+const AI_STUDIO_PREVIEW_HOST_PATTERN =
+  /^ais-(?:dev|pre|mob|shared)-[a-z0-9-]+\.[a-z0-9-]+\.run\.app$/i;
+
+export interface EffectiveAuthDomainResolution {
+  readonly authDomain: string;
+  readonly usesSameOriginProxy: boolean;
+}
+
+/**
+ * Resolves the Firebase Auth domain for browser initialization.
+ * On HTTPS Google AI Studio Preview origins (which are pre-registered in both
+ * Firebase Authorized Domains and Google OAuth Authorized Redirect URIs),
+ * using the current origin as authDomain with Next.js /__/auth/* rewrites
+ * keeps /__/auth/handler and /__/auth/iframe strictly first-party/same-origin,
+ * avoiding mobile browser third-party storage partitioning.
+ */
+export function resolveEffectiveAuthDomain(options: {
+  configuredAuthDomain: string;
+  currentHost: string | null;
+  currentProtocol: string | null;
+  forceSameOrigin?: boolean;
+}): EffectiveAuthDomainResolution {
+  const configured = options.configuredAuthDomain.trim();
+  if (!options.currentHost || options.currentProtocol !== "https:") {
+    return {
+      authDomain: configured,
+      usesSameOriginProxy: false,
+    };
+  }
+
+  const normalizedHost = options.currentHost.trim().toLowerCase();
+  const isSameAsConfigured = normalizedHost === configured.toLowerCase();
+  const isAiStudioPreviewHost =
+    AI_STUDIO_PREVIEW_HOST_PATTERN.test(normalizedHost);
+
+  if (options.forceSameOrigin || isSameAsConfigured || isAiStudioPreviewHost) {
+    return {
+      authDomain: normalizedHost,
+      usesSameOriginProxy: true,
+    };
+  }
+
+  return {
+    authDomain: configured,
+    usesSameOriginProxy: false,
+  };
+}
+
+/**
+ * Selects the most reliable Google Sign-In transport for the active browser context:
+ * - Embedded iframe: popup (accounts.google.com blocks iframe full-page redirect).
+ * - Standalone mobile with same-origin /__/auth/* proxy: redirect (avoids mobile
+ *   popup tab/opener isolation while preserving first-party redirect storage).
+ * - Standalone desktop: popup (with same-origin /__/auth/* relay and redirect fallback).
+ */
+export function selectPreferredSignInMethod(options: {
+  isEmbeddedIframe: boolean;
+  isMobileBrowser: boolean;
+  usesSameOriginProxy: boolean;
+}): GoogleSignInMethod {
+  if (options.isEmbeddedIframe) {
+    return "popup";
+  }
+  if (options.isMobileBrowser && options.usesSameOriginProxy) {
+    return "redirect";
+  }
+  return "popup";
+}
 
 export interface SignInErrorClassification {
   readonly code: string;
@@ -74,7 +146,10 @@ export function sanitizeNonSecretAuthMessage(error: unknown): string | null {
   if (!(error instanceof Error) || !error.message) return null;
   const cleaned = error.message
     .replace(/https?:\/\/\S+/gi, "[url-redacted]")
-    .replace(/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[token-redacted]")
+    .replace(
+      /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+      "[token-redacted]",
+    )
     .replace(/\b(?:ya29|eyJ)[A-Za-z0-9._-]+\b/g, "[token-redacted]")
     .trim();
   if (!cleaned) return null;
@@ -117,23 +192,18 @@ export function classifySignInError(
         "A previous Google Sign-In request was replaced by a newer attempt (auth/cancelled-popup-request). Select Sign in with Google once and wait for the window to complete.",
       isCancellation: true,
       shouldAutoFallbackToRedirect: false,
-      canOfferRedirectFallback: false,
+      canOfferRedirectFallback: !options.isEmbeddedIframe,
       suggestOpenInStandaloneTab: false,
     };
   }
 
   if (code === "auth/popup-closed-by-user") {
-    // In embedded Preview iframes and modern mobile browsers, Firebase Auth's
-    // popup frequently closes after Google OAuth finishes without being able to
-    // relay the authEvent back across partitioned third-party storage or a
-    // COOP-severed window.opener, causing Firebase SDK to emit
-    // auth/popup-closed-by-user even when the user completed sign-in.
     if (options.isEmbeddedIframe) {
       return {
         code,
         nextStatus: "error",
         message:
-          "Google Sign-In returned auth/popup-closed-by-user before MedFlow received your session. In an embedded Preview frame, browser storage partitioning and popup isolation often prevent the completed Google popup from returning credentials to the iframe. Open /staff/login in a full browser tab and sign in there.",
+          "Google Sign-In returned auth/popup-closed-by-user before MedFlow received your session. Inside an embedded Preview iframe, browser popup isolation can prevent the completed window from returning credentials. Open /staff/login in a full browser tab to complete sign-in.",
         isCancellation: false,
         shouldAutoFallbackToRedirect: false,
         canOfferRedirectFallback: false,
@@ -146,7 +216,7 @@ export function classifySignInError(
         code,
         nextStatus: "error",
         message:
-          "The Google Sign-In window closed before returning a session to MedFlow (auth/popup-closed-by-user). On mobile browsers, cross-origin popup isolation or third-party storage partitioning can drop the completed sign-in event. Retry sign-in, or open this URL directly in Chrome/Safari outside any in-app frame.",
+          "The Google Sign-In popup closed without returning a session (auth/popup-closed-by-user). On mobile browsers, full-page redirect sign-in avoids popup window isolation. Use redirect sign-in below to complete authentication.",
         isCancellation: false,
         shouldAutoFallbackToRedirect: false,
         canOfferRedirectFallback: true,
@@ -158,7 +228,7 @@ export function classifySignInError(
       code,
       nextStatus: "unauthenticated",
       message:
-        "The Google Sign-In popup closed before authentication completed (auth/popup-closed-by-user). If you closed the window, select Sign in with Google to try again; if you finished signing in, check whether browser third-party cookie/popup settings blocked the callback.",
+        "The Google Sign-In popup closed before authentication completed (auth/popup-closed-by-user). If you closed the window, try again; if you completed sign-in, use redirect sign-in below.",
       isCancellation: true,
       shouldAutoFallbackToRedirect: false,
       canOfferRedirectFallback: true,
@@ -171,7 +241,7 @@ export function classifySignInError(
       return {
         code,
         nextStatus: "authenticating",
-        message: `Your browser blocked or could not complete the Google Sign-In popup (${code}). Switching to page redirect sign-in...`,
+        message: `Your browser blocked or could not complete the Google Sign-In popup (${code}). Switching to full-page redirect sign-in...`,
         isCancellation: false,
         shouldAutoFallbackToRedirect: true,
         canOfferRedirectFallback: true,
@@ -221,7 +291,7 @@ export function classifySignInError(
       code,
       nextStatus: "error",
       message:
-        "Google Sign-In encountered a browser authentication error (auth/internal-error). Open /staff/login in a full browser tab or retry sign-in.",
+        "Google Sign-In encountered a browser authentication error (auth/internal-error). Open /staff/login in a full browser tab or use redirect sign-in.",
       isCancellation: false,
       shouldAutoFallbackToRedirect: false,
       canOfferRedirectFallback: !options.isEmbeddedIframe,
@@ -232,7 +302,7 @@ export function classifySignInError(
   return {
     code,
     nextStatus: "error",
-    message: `Google Sign-In could not be completed (${code}). Retry sign-in, or open /staff/login directly in a full browser tab.`,
+    message: `Google Sign-In could not be completed (${code}). Retry sign-in, or use redirect sign-in in a full browser tab.`,
     isCancellation: false,
     shouldAutoFallbackToRedirect: false,
     canOfferRedirectFallback: !options.isEmbeddedIframe,
@@ -242,13 +312,24 @@ export function classifySignInError(
 
 export function classifyRedirectResultError(error: unknown): {
   readonly code: string;
+  readonly isCancellation: boolean;
   readonly message: string;
 } {
   const code = extractFirebaseAuthErrorCode(error);
 
+  if (code === "auth/redirect-cancelled-by-user") {
+    return {
+      code,
+      isCancellation: true,
+      message:
+        "Google redirect sign-in was cancelled before completion (auth/redirect-cancelled-by-user). Select Sign in with Google whenever you are ready to try again.",
+    };
+  }
+
   if (code === "auth/unauthorized-domain") {
     return {
       code,
+      isCancellation: false,
       message:
         "Redirect sign-in could not complete because this domain is not authorized in Firebase Authentication (auth/unauthorized-domain).",
     };
@@ -257,6 +338,7 @@ export function classifyRedirectResultError(error: unknown): {
   if (code === "auth/network-request-failed") {
     return {
       code,
+      isCancellation: false,
       message:
         "Network connection failed while finishing Google redirect sign-in (auth/network-request-failed). Please retry.",
     };
@@ -265,6 +347,7 @@ export function classifyRedirectResultError(error: unknown): {
   if (code === "auth/web-storage-unsupported") {
     return {
       code,
+      isCancellation: false,
       message:
         "This browser blocks storage required for redirect sign-in inside embedded frames (auth/web-storage-unsupported). Open /staff/login in a full browser tab and try again.",
     };
@@ -272,6 +355,7 @@ export function classifyRedirectResultError(error: unknown): {
 
   return {
     code,
+    isCancellation: false,
     message: `Unable to complete Google redirect sign-in (${code}). Please retry sign-in below or open /staff/login in a full browser tab.`,
   };
 }

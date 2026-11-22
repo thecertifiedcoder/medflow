@@ -21,10 +21,12 @@ export function StaffLoginPanel() {
     errorMessage,
     authNotice,
     authDiagnostics,
+    preferredSignInMethod,
     canUseRedirectFallback,
     suggestOpenInStandaloneTab,
     isSigningIn,
     signInWithGoogle,
+    signInWithGooglePopup,
     signInWithGoogleRedirect,
     cancelSignInAttempt,
     signOutStaff,
@@ -81,7 +83,10 @@ export function StaffLoginPanel() {
                 {authDiagnostics.isEmbeddedIframe
                   ? "Embedded iframe"
                   : "Standalone tab"}{" "}
-                · {authDiagnostics.isMobileBrowser ? "Mobile" : "Desktop"}
+                · {authDiagnostics.isMobileBrowser ? "Mobile" : "Desktop"} ·{" "}
+                {preferredSignInMethod === "redirect"
+                  ? "Redirect flow"
+                  : "Popup flow"}
               </dd>
               <dt>Redirect result</dt>
               <dd className="mf-mono text-[13px]">
@@ -91,6 +96,9 @@ export function StaffLoginPanel() {
               <dd className="mf-mono break-all text-[13px]">
                 {authDiagnostics.currentHost ?? "Unavailable"} →{" "}
                 {authDiagnostics.authDomain}
+                {authDiagnostics.usesSameOriginProxy
+                  ? " (same-origin proxy)"
+                  : ""}
               </dd>
             </dl>
           </div>
@@ -104,8 +112,8 @@ export function StaffLoginPanel() {
             iconSpin
             title="Checking authentication state"
           >
-            Checking whether a Firebase clinical staff session is already active
-            in this browser...
+            Checking whether a Firebase clinical staff session or Google
+            sign-in callback is active in this browser...
           </Alert>
         </div>
       )}
@@ -118,13 +126,15 @@ export function StaffLoginPanel() {
             iconSpin
             title="Signing in with Google"
           >
-            Complete Google authentication in the sign-in window. If your mobile
-            browser blocked or closed the window without returning a session,
-            cancel and open sign-in in a full browser tab.
+            {preferredSignInMethod === "redirect"
+              ? "Continuing to Google Sign-In. You will return here automatically once Google authentication completes."
+              : "Complete Google authentication in the sign-in window. If your browser blocked or closed the window without returning a session, cancel and retry or use redirect sign-in."}
           </Alert>
           <div className="flex flex-wrap gap-3">
             <Button variant="primary" size="md" loading disabled>
-              Waiting for Google Sign-In...
+              {preferredSignInMethod === "redirect"
+                ? "Redirecting to Google..."
+                : "Waiting for Google Sign-In..."}
             </Button>
             <Button
               variant="secondary"
@@ -163,9 +173,13 @@ export function StaffLoginPanel() {
               disabled={isSigningIn}
             >
               {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
-              {isSigningIn ? "Opening Google Sign-In..." : "Sign in with Google"}
+              {isSigningIn
+                ? preferredSignInMethod === "redirect"
+                  ? "Redirecting to Google..."
+                  : "Opening Google Sign-In..."
+                : "Sign in with Google"}
             </Button>
-            {canUseRedirectFallback && (
+            {canUseRedirectFallback && preferredSignInMethod !== "redirect" && (
               <Button
                 variant="secondary"
                 size="md"
@@ -334,15 +348,26 @@ export function StaffLoginPanel() {
                 {!isSigningIn ? <Icon name="shield" size="btn" /> : null}
                 Sign in with Google
               </Button>
-              {canUseRedirectFallback && (
+              {preferredSignInMethod === "redirect" ? (
                 <Button
                   variant="secondary"
                   size="md"
-                  onClick={() => void signInWithGoogleRedirect()}
+                  onClick={() => void signInWithGooglePopup()}
                   disabled={isSigningIn}
                 >
-                  Use redirect sign-in
+                  Try popup sign-in
                 </Button>
+              ) : (
+                canUseRedirectFallback && (
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    onClick={() => void signInWithGoogleRedirect()}
+                    disabled={isSigningIn}
+                  >
+                    Use redirect sign-in
+                  </Button>
+                )
               )}
               <Button
                 variant="secondary"
