@@ -305,103 +305,116 @@ export async function extractClinicalIntakeBrief(params: {
     };
   }
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
+  const candidateModels = Array.from(
+    new Set([config.geminiExtractionModel, "gemini-3.1-flash-lite"]),
+  );
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+
+  const prompt = [
+    `Input Mode: ${params.inputMode}`,
+    params.age !== undefined && params.age !== null
+      ? `Patient Reported Age: ${params.age}`
+      : "Patient Reported Age: Not provided",
+    "Patient Confirmed Narrative (copy sourceQuote substrings verbatim from between the markers):",
+    "---BEGIN_CONFIRMED_NARRATIVE---",
+    params.confirmedNarrative,
+    "---END_CONFIRMED_NARRATIVE---",
+  ].join("\n");
+
+  let lastErrorCode = "GEMINI_EXTRACTION_ERROR";
+  let lastModelId = config.geminiExtractionModel;
+
+  for (let idx = 0; idx < candidateModels.length; idx += 1) {
+    const modelId = candidateModels[idx]!;
+    lastModelId = modelId;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: prompt,
+        config: {
+          systemInstruction: EXTRACTION_SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: GEMINI_CLINICAL_BRIEF_RESPONSE_SCHEMA,
         },
-      },
-    });
+      });
 
-    const prompt = [
-      `Input Mode: ${params.inputMode}`,
-      params.age !== undefined && params.age !== null
-        ? `Patient Reported Age: ${params.age}`
-        : "Patient Reported Age: Not provided",
-      "Patient Confirmed Narrative (copy sourceQuote substrings verbatim from between the markers):",
-      "---BEGIN_CONFIRMED_NARRATIVE---",
-      params.confirmedNarrative,
-      "---END_CONFIRMED_NARRATIVE---",
-    ].join("\n");
+      const rawText = response.text?.trim();
+      if (!rawText) {
+        lastErrorCode = "GEMINI_EMPTY_RESPONSE";
+        continue;
+      }
 
-    const response = await ai.models.generateContent({
-      model: config.geminiExtractionModel,
-      contents: prompt,
-      config: {
-        systemInstruction: EXTRACTION_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_CLINICAL_BRIEF_RESPONSE_SCHEMA,
-      },
-    });
+      const parsedJson: unknown = JSON.parse(rawText);
+      const rawObj =
+        typeof parsedJson === "object" && parsedJson !== null
+          ? (parsedJson as Record<string, unknown>)
+          : {};
+      const validatedBrief = ClinicalIntakeBriefSchema.safeParse({
+        ...rawObj,
+        schemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
+        limitations:
+          Array.isArray(rawObj.limitations) && rawObj.limitations.length > 0
+            ? rawObj.limitations
+            : [
+                "Non-authoritative AI intake draft; requires qualified clinical staff verification.",
+              ],
+      });
 
-    const rawText = response.text?.trim();
-    if (!rawText) {
+      if (!validatedBrief.success) {
+        lastErrorCode = "GEMINI_SCHEMA_VALIDATION_FAILED";
+        continue;
+      }
+
+      const grounded = groundBriefQuotesAgainstNarrative(
+        validatedBrief.data,
+        params.confirmedNarrative,
+      );
+
+      const needsClarification =
+        grounded.brief.chiefConcern.certainty === "unclear" &&
+        grounded.brief.symptoms.length === 0;
+
       return {
-        aiStatus: "failed",
-        aiModelId: config.geminiExtractionModel,
+        aiStatus: needsClarification ? "needs_human_clarification" : "succeeded",
+        aiModelId: modelId,
         aiSchemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
-        aiBrief: null,
-        aiErrorCode: "GEMINI_EMPTY_RESPONSE",
+        aiBrief: grounded.brief,
+        aiErrorCode: null,
       };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      const isTransientUnavailable =
+        /503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand/i.test(errMsg);
+
+      lastErrorCode = errMsg.includes("JSON")
+        ? "GEMINI_INVALID_JSON"
+        : isTransientUnavailable
+          ? "GEMINI_UPSTREAM_UNAVAILABLE"
+          : "GEMINI_EXTRACTION_ERROR";
+
+      if (isTransientUnavailable && idx + 1 < candidateModels.length) {
+        continue;
+      }
+      break;
     }
-
-    const parsedJson: unknown = JSON.parse(rawText);
-    const rawObj =
-      typeof parsedJson === "object" && parsedJson !== null
-        ? (parsedJson as Record<string, unknown>)
-        : {};
-    const validatedBrief = ClinicalIntakeBriefSchema.safeParse({
-      ...rawObj,
-      schemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
-      limitations:
-        Array.isArray(rawObj.limitations) && rawObj.limitations.length > 0
-          ? rawObj.limitations
-          : [
-              "Non-authoritative AI intake draft; requires qualified clinical staff verification.",
-            ],
-    });
-
-    if (!validatedBrief.success) {
-      return {
-        aiStatus: "failed",
-        aiModelId: config.geminiExtractionModel,
-        aiSchemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
-        aiBrief: null,
-        aiErrorCode: "GEMINI_SCHEMA_VALIDATION_FAILED",
-      };
-    }
-
-    const grounded = groundBriefQuotesAgainstNarrative(
-      validatedBrief.data,
-      params.confirmedNarrative,
-    );
-
-    const needsClarification =
-      grounded.brief.chiefConcern.certainty === "unclear" &&
-      grounded.brief.symptoms.length === 0;
-
-    return {
-      aiStatus: needsClarification ? "needs_human_clarification" : "succeeded",
-      aiModelId: config.geminiExtractionModel,
-      aiSchemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
-      aiBrief: grounded.brief,
-      aiErrorCode: null,
-    };
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error";
-    const errorCode = errMsg.includes("JSON")
-      ? "GEMINI_INVALID_JSON"
-      : "GEMINI_EXTRACTION_ERROR";
-    return {
-      aiStatus: "failed",
-      aiModelId: config.geminiExtractionModel,
-      aiSchemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
-      aiBrief: null,
-      aiErrorCode: errorCode,
-    };
   }
+
+  return {
+    aiStatus: "failed",
+    aiModelId: lastModelId,
+    aiSchemaVersion: CLINICAL_BRIEF_SCHEMA_VERSION,
+    aiBrief: null,
+    aiErrorCode: lastErrorCode,
+  };
 }
 
 export function normalizeAudioMimeType(rawMimeType: string): string {
