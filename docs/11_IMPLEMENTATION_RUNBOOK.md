@@ -126,3 +126,35 @@ Google's official announcement confirms that Build Mode supports Next.js and tha
 - [ ] Sprint log updated with date and feature status.
 - [ ] Known blockers have an owner and workaround.
 - [ ] Demo path remains repeatable.
+
+
+## 8. Updated milestone sequence after Milestone 1B (founder-approved 2026-11-22)
+
+Milestone 1A and Milestone 1B are implemented and verified in AI Studio Preview according to their stop reports. The founder still needs to manually create the synthetic facility and staff profile in Firebase Console and complete the interactive Google Sign-In/authorized queue check. Do not claim those founder-only checks are complete until observed.
+
+### Milestone 1C — New design-system migration (requires separate approval)
+
+- Read `docs/18_DESIGN_SYSTEM_SPEC.md` and the full new `design-system/medflow-design-system.html` plus `design-system/design-tokens.css`.
+- Replace the old visual tokens, typography, components and styling with the founder-approved IBM Plex / teal / navy system.
+- Preserve the existing Next.js routes, Firebase setup, deployed Firestore rules and staff authorization behaviour.
+- Rebuild the reference as accessible React components; do not iframe it or copy its JavaScript demonstrations.
+- Do not implement the reference's adult TEWS/SATS score, clinical colour classifications, time targets, vital-sign scoring or AI red-flag prioritisation. Those elements are excluded by D-019.
+- Run typecheck, lint, production build and desktop/mobile browser verification. Stop and provide a changed-file report and screenshots of the actual app.
+- Do not start Milestone 2 in the same authorization.
+
+### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval)
+
+- Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable intake persistence.
+- Follow Starter Tier Option 1B: AI extraction is triggered and persisted only through an authenticated, active, facility-authorised staff session.
+- Gemini remains server-side; preserve the strict schema and source-quote requirements.
+- Keep original narrative, AI draft and staff-reviewed copy separate.
+- Stop before implementing the full Evidence Integrity Engine; report the extraction workflow and test results.
+
+### Milestone 3 — Evidence Integrity Engine (requires separate approval)
+
+- Implement the deterministic algorithm in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
+- Add exact quote matching, server-derived UTF-16 source spans, field-level evidence states, narrative/draft hashes, HMAC provenance signing and verification.
+- Add staff UI for inspecting source matches and resolving unsupported/ambiguous evidence.
+- Run the complete synthetic EIE test matrix and stop with a verified report.
+
+No milestone may be silently combined with the next. Each requires its own explicit founder approval and stop report.
