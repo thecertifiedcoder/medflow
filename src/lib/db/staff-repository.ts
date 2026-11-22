@@ -65,6 +65,18 @@ export interface FacilityIntakeDetailRecord {
   readonly auditEvents: readonly StaffIntakeAuditEvent[];
 }
 
+export interface FacilityAdminOverviewRecord {
+  readonly facilityId: string;
+  readonly facilityName: string;
+  readonly facilityPublicCode: string;
+  readonly timezone: string;
+  readonly isDemo: boolean;
+  readonly active: boolean;
+  readonly activeStaffCount: number;
+  readonly totalIntakesCount: number;
+  readonly unassignedIntakesCount: number;
+}
+
 /**
  * Reusable server-only repository boundary for Neon PostgreSQL clinical staff reads.
  * Every tenant-owned method requires an explicit, server-verified `facilityId`.
@@ -80,6 +92,9 @@ export interface StaffRepository {
     facilityId: string,
     intakeId: string,
   ): Promise<FacilityIntakeDetailRecord | null>;
+  getFacilityAdminOverview?(
+    facilityId: string,
+  ): Promise<FacilityAdminOverviewRecord | null>;
 }
 
 function toIso(value: Date | string): string {
@@ -465,6 +480,71 @@ export function createDrizzleStaffRepository(
         intake,
         evidence,
         auditEvents: audit,
+      };
+    },
+
+    async getFacilityAdminOverview(
+      facilityId: string,
+    ): Promise<FacilityAdminOverviewRecord | null> {
+      assertServerRuntime();
+      const db = resolveDb();
+
+      const facilityRows = await db
+        .select({
+          id: facilities.id,
+          name: facilities.name,
+          publicCode: facilities.publicCode,
+          timezone: facilities.timezone,
+          isDemo: facilities.isDemo,
+          active: facilities.active,
+        })
+        .from(facilities)
+        .where(eq(facilities.id, facilityId))
+        .limit(1);
+
+      const facilityRow = facilityRows[0];
+      if (!facilityRow) {
+        return null;
+      }
+
+      const [staffCounts, intakeCounts] = await Promise.all([
+        db
+          .select({
+            activeStaffCount: sql<number>`count(*)::int`,
+          })
+          .from(facilityMemberships)
+          .innerJoin(
+            staffProfiles,
+            eq(facilityMemberships.staffUid, staffProfiles.uid),
+          )
+          .where(
+            and(
+              eq(facilityMemberships.facilityId, facilityId),
+              eq(facilityMemberships.active, true),
+              eq(staffProfiles.active, true),
+            ),
+          ),
+        db
+          .select({
+            totalIntakesCount: sql<number>`count(*)::int`,
+            unassignedIntakesCount: sql<number>`count(*) filter (where ${patientIntakes.staffAssignedPriority} = 'unassigned')::int`,
+          })
+          .from(patientIntakes)
+          .where(eq(patientIntakes.facilityId, facilityId)),
+      ]);
+
+      return {
+        facilityId: facilityRow.id,
+        facilityName: facilityRow.name,
+        facilityPublicCode: facilityRow.publicCode,
+        timezone: facilityRow.timezone,
+        isDemo: facilityRow.isDemo,
+        active: facilityRow.active,
+        activeStaffCount: Number(staffCounts[0]?.activeStaffCount ?? 0),
+        totalIntakesCount: Number(intakeCounts[0]?.totalIntakesCount ?? 0),
+        unassignedIntakesCount: Number(
+          intakeCounts[0]?.unassignedIntakesCount ?? 0,
+        ),
       };
     },
   };

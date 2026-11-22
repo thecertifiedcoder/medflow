@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getPublicConfig } from "./public";
 import {
+  DEFAULT_DEMO_SESSION_TTL_SECONDS,
   getDatabaseUrl,
+  getDemoModeConfig,
+  getDemoSessionSecret,
   getMigrationDatabaseUrl,
   getServerConfig,
 } from "./server";
@@ -107,3 +110,65 @@ test("getDatabaseUrl and getMigrationDatabaseUrl enforce valid server-only Postg
     /DATABASE_URL_UNPOOLED must be a valid PostgreSQL connection URI/,
   );
 });
+
+test("getDemoModeConfig is disabled by default and fails closed when secret or TTL is invalid", () => {
+  const unset = getDemoModeConfig({});
+  assert.equal(unset.enabled, false);
+  assert.equal(unset.configured, false);
+  assert.equal(unset.ttlSeconds, DEFAULT_DEMO_SESSION_TTL_SECONDS);
+
+  const missingSecret = getDemoModeConfig({
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+  });
+  assert.equal(missingSecret.enabled, true);
+  assert.equal(missingSecret.configured, false);
+  assert.throws(
+    () => getDemoSessionSecret({ MEDFLOW_DEMO_MODE_ENABLED: "true" }),
+    /MEDFLOW_DEMO_SESSION_SECRET/,
+  );
+
+  const shortSecret = getDemoModeConfig({
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+    MEDFLOW_DEMO_SESSION_SECRET: "too-short",
+  });
+  assert.equal(shortSecret.enabled, true);
+  assert.equal(shortSecret.configured, false);
+
+  const validSecret = "a-valid-server-only-demo-session-secret-0123456789";
+  const badTtl = getDemoModeConfig({
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+    MEDFLOW_DEMO_SESSION_SECRET: validSecret,
+    MEDFLOW_DEMO_SESSION_TTL_SECONDS: "60",
+  });
+  assert.equal(badTtl.enabled, true);
+  assert.equal(badTtl.configured, false);
+
+  const valid = getDemoModeConfig({
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+    MEDFLOW_DEMO_SESSION_SECRET: validSecret,
+    MEDFLOW_DEMO_SESSION_TTL_SECONDS: "3600",
+  });
+  assert.equal(valid.enabled, true);
+  assert.equal(valid.configured, true);
+  assert.equal(valid.ttlSeconds, 3600);
+  assert.throws(
+    () => getDemoSessionSecret({ MEDFLOW_DEMO_SESSION_SECRET: validSecret }),
+    /disabled/i,
+  );
+  assert.equal(
+    getDemoSessionSecret({
+      MEDFLOW_DEMO_MODE_ENABLED: "true",
+      MEDFLOW_DEMO_SESSION_SECRET: validSecret,
+    }),
+    validSecret,
+  );
+
+  const srv = getServerConfig({
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+    MEDFLOW_DEMO_SESSION_SECRET: validSecret,
+  });
+  assert.equal(srv.demoModeEnabled, true);
+  assert.equal(srv.demoModeReady, true);
+  assert.equal("demoSessionSecret" in srv, false);
+});
+

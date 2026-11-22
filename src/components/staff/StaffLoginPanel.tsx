@@ -14,6 +14,8 @@ import { useStaffAuth } from "@/lib/firebase/staff-auth";
 export function StaffLoginPanel() {
   const {
     status,
+    authMode,
+    demoPersona,
     firebaseUser,
     staffProfile,
     activeFacility,
@@ -271,10 +273,20 @@ export function StaffLoginPanel() {
 
       {status === "authorized" && staffProfile && activeFacility && (
         <div className="grid gap-3">
-          <Alert tone="success" title="Staff session verified">
+          <Alert
+            tone="success"
+            title={
+              authMode === "demo"
+                ? "Hackathon Demo session active"
+                : "Staff session verified"
+            }
+          >
             Signed in as <strong>{staffProfile.displayName}</strong> (
-            <span className="capitalize">{activeFacility.role}</span>) with
-            server-verified ID token and authorized access to{" "}
+            <span className="capitalize">{activeFacility.role}</span>) with{" "}
+            {authMode === "demo"
+              ? `server-signed HTTP-only demo session (${demoPersona === "admin" ? "Demo Administrator" : "Demo Clinical Staff"})`
+              : "server-verified Firebase ID token"}{" "}
+            and authorized access to{" "}
             <strong>{activeFacility.facilityName}</strong> (
             <code className="mf-mono text-[13px]">{activeFacilityId}</code>).
           </Alert>

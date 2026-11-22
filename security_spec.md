@@ -51,3 +51,30 @@ Defined in `src/db/schema.ts`, `src/db/invariants.ts`, `drizzle/0000_initial_med
 ## Part B — Legacy Firestore Decommissioning Record (Completed in Phase 1D-3)
 
 **Status:** Cloud Firestore is fully decommissioned as of Phase 1D-3 under ADR `D-020`. All legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), Firestore client initialization (`getFirestore`/`db`/`testFirestoreConnection`), and `@firebase/eslint-plugin-security-rules` have been removed. Firebase Authentication (`daring-brace-jw1xt`, Google Sign-In + `/__/auth/*` same-origin proxy + server-side `verifyIdToken`) remains intact as the identity provider only, and live Neon PostgreSQL enforces invariants PG-01 through PG-06 at the database layer.
+
+---
+
+## Part C — Hackathon Demo Mode Security Specification (`D-021`, Phase DA-1)
+
+Defined in `src/db/invariants.ts`, `src/lib/env/server.ts`, `src/lib/auth/demo-session.ts`, `src/lib/auth/staff-authorization.ts`, and `src/lib/api/demo-handlers.ts`.
+
+### C.1 Fail-Closed Server Controls & Fixed Identities
+
+1. **Disabled by Default & Fail-Closed Secret Enforcement:** `MEDFLOW_DEMO_MODE_ENABLED` defaults to `false`. Only the exact server-side string `"true"` enables Demo Mode. When enabled, `MEDFLOW_DEMO_SESSION_SECRET` (minimum 32 characters, strictly server-only, never `NEXT_PUBLIC_*`) and a valid bounded `MEDFLOW_DEMO_SESSION_TTL_SECONDS` (`300..28800`, default `7200`) are mandatory. Missing or weak configuration fails closed with `503 DEMO_MODE_MISCONFIGURED`; disabled deployments return `403 DEMO_MODE_DISABLED`.
+2. **Fixed Predefined Synthetic Personas Only:** Only two server-defined personas exist—`demo-admin-01` (`admin`) and `demo-staff-01` (`nurse`)—both bound exclusively to canonical synthetic facility `demo-clinic-01` (`DEMO-CLINIC-01`, `is_demo = true`). `POST /api/demo/session/admin` and `POST /api/demo/session/staff` reject any non-empty request body attempting to inject `role`, `facilityId`, or `uid` (`400 UNSUPPORTED_REQUEST_BODY`).
+3. **Reserved Demo UID Separation:** The Firebase Bearer token verification path in `resolveStaffSession()` explicitly rejects reserved synthetic demo UIDs (`403 RESERVED_DEMO_UID`) so real Firebase tokens cannot collide with synthetic demo identities.
+
+### C.2 Cookie Cryptographic Integrity, CSRF & Revocation
+
+1. **Signed HTTP-Only Cookie (`medflow_demo_session`):** Tokens use versioned base64url payloads signed with `HMAC-SHA256` and verified in constant time via `crypto.timingSafeEqual`. Strict Zod schema validation, exact persona/UID/role/facility binding checks, timestamp/TTL bounds, and expiration checks run on every request. Cookies are never exposed to `document.cookie`, `localStorage`, or `sessionStorage`.
+2. **Cookie Attributes:** Always sets `HttpOnly; Path=/; Max-Age=<ttl>`. In production or HTTPS requests (`NODE_ENV === "production"` or `https`), sets `Secure; SameSite=None; Partitioned` to protect transport confidentiality while remaining usable in both standalone tabs and embedded preview iframes. Local non-HTTPS development uses `SameSite=Lax`.
+3. **CSRF Protection:** Cookie-issuing (`POST /api/demo/session/admin`, `POST /api/demo/session/staff`) and cookie-revoking (`POST /api/demo/logout`) routes require both the non-simple custom header `X-MedFlow-Demo-Request: 1` and a same-origin `Origin`/`Referer` host match against `X-Forwarded-Host`/`Host`.
+4. **Revocation & Idempotent Switching:** `POST /api/demo/logout` revokes the active session ID (`sid`) server-side and clears the cookie (`Max-Age=0`). Switching personas automatically revokes the superseded session ID. Rapid duplicate clicks on the same persona reuse the active valid session when at least 5 minutes remain. *(Limitation documented honestly: the revocation registry is process-local in-memory, bounded by `MAX_REVOKED_ENTRIES` and natural token expiry; Demo Mode is strictly for hackathon evaluation and not production clinical auth.)*
+
+### C.3 Unified RBAC & Tenant Isolation
+
+- Demo cookies flow through the exact same `resolveStaffSession` / `requireAuthorizedStaff` server boundary used for Firebase Bearer tokens—no parallel authorization bypass exists.
+- Every request re-verifies the active PostgreSQL `staff_profiles` row, active `facility_memberships` row, exact persona role match, and `facilities.is_demo === true` on `demo-clinic-01`.
+- Any request supplying another `facilityId` fails with `403 FACILITY_ACCESS_DENIED`.
+- Read-only `GET /api/staff/admin/facility` enforces `allowedRoles: ["admin"]`, allowing `demo-admin-01` (`200`) while denying `demo-staff-01` (`403 INSUFFICIENT_STAFF_ROLE`).
+

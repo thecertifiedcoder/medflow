@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   return handleStaffQueueGet({
     authorizationHeader: request.headers.get("authorization"),
+    cookieHeader: request.headers.get("cookie"),
     searchParams: request.nextUrl.searchParams,
   });
 }

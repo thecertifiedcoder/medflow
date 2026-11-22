@@ -1,3 +1,4 @@
+import { DemoAccessLauncher } from "@/components/demo/DemoAccessLauncher";
 import { DemoSafetyBanner } from "@/components/layout/DemoSafetyBanner";
 import { PageContainer } from "@/components/layout/PageContainer";
 import {
@@ -15,6 +16,9 @@ import {
   type TimelineEntry,
 } from "@/components/ui";
 import { getPublicConfig } from "@/lib/env/public";
+import { getDemoModeConfig } from "@/lib/env/server";
+
+export const dynamic = "force-dynamic";
 
 const DEMO_TIMELINE: readonly TimelineEntry[] = [
   {
@@ -48,12 +52,13 @@ const DEMO_TIMELINE: readonly TimelineEntry[] = [
 
 export default function HomePage() {
   const publicConfig = getPublicConfig();
+  const demoConfig = getDemoModeConfig();
 
   return (
     <div>
       {/* Full-width Navy Masthead derived directly from the attached HTML */}
       <section className="mf-on-dark border-b-4 border-[var(--mf-primary)] bg-[var(--mf-navy-900)] text-white">
-        <div className="mx-auto grid max-w-[1160px] gap-8 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-center">
+        <div className="mx-auto grid max-w-[1160px] gap-6 px-4 py-7 sm:px-6 sm:py-9 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-center">
           <div className="grid gap-5">
             <div className="flex flex-wrap items-center gap-3">
               <BrandMark
@@ -74,13 +79,18 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              <ButtonLink href="/intake" variant="primary" size="md">
-                Open patient intake
+              <ButtonLink href="#demo-access-heading" variant="primary" size="md">
+                <Icon name="shield" size="btn" />
+                Try Hackathon Demo
                 <Icon name="arrow" size="btn" />
+              </ButtonLink>
+              <ButtonLink href="/intake" variant="secondary" size="md">
+                <Icon name="clipboard" size="btn" />
+                Start Patient Intake
               </ButtonLink>
               <ButtonLink href="/staff/login" variant="secondary" size="md">
                 <Icon name="lock" size="btn" />
-                Staff sign in
+                Staff Google Sign-In
               </ButtonLink>
             </div>
           </div>
@@ -162,6 +172,12 @@ export default function HomePage() {
 
       <PageContainer width="standard">
         <DemoSafetyBanner className="mb-8" />
+
+        <DemoAccessLauncher
+          demoModeEnabled={demoConfig.enabled}
+          demoModeReady={demoConfig.enabled && demoConfig.configured}
+          facilityPublicCode={publicConfig.demoFacilityPublicCode}
+        />
 
         {/* Section 1: Four-source provenance architecture */}
         <section className="mb-10 grid gap-5" aria-labelledby="provenance-heading">

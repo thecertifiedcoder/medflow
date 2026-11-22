@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DemoSessionRevocationStore } from "@/lib/auth/demo-session";
 import {
   requireAuthorizedStaff,
   resolveStaffSession,
@@ -18,10 +19,12 @@ import {
   IntakeIdParamSchema,
   PostgresStaffSessionResponseSchema,
   STAFF_QUEUE_DEFAULT_LIMIT,
+  StaffAdminFacilityOverviewResponseSchema,
   StaffIntakeDetailResponseSchema,
   StaffQueueQuerySchema,
   StaffQueueResponseSchema,
   type PostgresStaffSessionResponse,
+  type StaffAdminFacilityOverviewResponse,
   type StaffIntakeDetailResponse,
   type StaffQueueQuery,
   type StaffQueueResponse,
@@ -33,10 +36,14 @@ export const ALL_CLINICAL_STAFF_ROLES: readonly StaffRole[] = [
   "admin",
 ];
 
+export const ADMIN_ONLY_ROLES: readonly StaffRole[] = ["admin"];
+
 export interface StaffHandlerDeps {
   readonly verifyToken?: VerifyTokenFn;
   readonly repository?: StaffRepository;
   readonly now?: () => Date;
+  readonly env?: Record<string, string | undefined>;
+  readonly revocationStore?: DemoSessionRevocationStore;
 }
 
 const NO_STORE_HEADERS = {
@@ -152,6 +159,7 @@ export function parseStaffQueueSearchParams(
 export async function handleStaffSessionGet(
   request: {
     readonly authorizationHeader: string | null;
+    readonly cookieHeader?: string | null;
     readonly searchParams: URLSearchParams;
   },
   deps: StaffHandlerDeps = {},
@@ -175,15 +183,22 @@ export async function handleStaffSessionGet(
   try {
     const resolution = await resolveStaffSession({
       authorizationHeader: request.authorizationHeader,
+      cookieHeader: request.cookieHeader,
       requestedFacilityId,
       strictFacilityMatch: false,
       verifyToken: deps.verifyToken,
       repository: deps.repository ?? createDrizzleStaffRepository(),
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
     });
 
     const base = {
       authenticated: true as const,
       verifiedByServer: true as const,
+      authMode: resolution.authMode,
+      demoPersona: resolution.demoPersona,
+      sessionExpiresAt: resolution.sessionExpiresAt,
       projectId: resolution.token.projectId,
       authorizationModel: "neon_postgres_server_rbac" as const,
       user: {
@@ -237,6 +252,7 @@ export async function handleStaffSessionGet(
 export async function handleStaffQueueGet(
   request: {
     readonly authorizationHeader: string | null;
+    readonly cookieHeader?: string | null;
     readonly searchParams: URLSearchParams;
   },
   deps: StaffHandlerDeps = {},
@@ -254,11 +270,15 @@ export async function handleStaffQueueGet(
   try {
     const authContext = await requireAuthorizedStaff({
       authorizationHeader: request.authorizationHeader,
+      cookieHeader: request.cookieHeader,
       requestedFacilityId: parsedQuery.data.facilityId ?? null,
       strictFacilityMatch: true,
       allowedRoles: ALL_CLINICAL_STAFF_ROLES,
       verifyToken: deps.verifyToken,
       repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
     });
 
     const result = await repository.listFacilityIntakes({
@@ -303,6 +323,7 @@ export async function handleStaffQueueGet(
 export async function handleStaffIntakeDetailGet(
   request: {
     readonly authorizationHeader: string | null;
+    readonly cookieHeader?: string | null;
     readonly intakeId: string;
     readonly searchParams: URLSearchParams;
   },
@@ -339,11 +360,15 @@ export async function handleStaffIntakeDetailGet(
   try {
     const authContext = await requireAuthorizedStaff({
       authorizationHeader: request.authorizationHeader,
+      cookieHeader: request.cookieHeader,
       requestedFacilityId,
       strictFacilityMatch: true,
       allowedRoles: ALL_CLINICAL_STAFF_ROLES,
       verifyToken: deps.verifyToken,
       repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
     });
 
     const record = await repository.findFacilityIntakeDetail(
@@ -365,6 +390,101 @@ export async function handleStaffIntakeDetailGet(
         intake: record.intake,
         evidence: record.evidence,
         auditEvents: record.auditEvents,
+        fetchedAt: now().toISOString(),
+      });
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
+    });
+  } catch (error) {
+    return handleUnexpectedStaffApiError(error);
+  }
+}
+
+/**
+ * Core handler for GET /api/staff/admin/facility.
+ * Strictly enforces `admin` role in PostgreSQL and returns a read-only overview
+ * of the administrator's authorized facility (no provisioning or intake mutations).
+ */
+export async function handleStaffAdminFacilityGet(
+  request: {
+    readonly authorizationHeader: string | null;
+    readonly cookieHeader?: string | null;
+    readonly searchParams: URLSearchParams;
+  },
+  deps: StaffHandlerDeps = {},
+): Promise<NextResponse> {
+  assertServerRuntime();
+
+  const rawFacilityId = request.searchParams.get("facilityId");
+  let requestedFacilityId: string | null = null;
+  if (rawFacilityId !== null && rawFacilityId.trim().length > 0) {
+    const parsedFacility = FacilityIdSchema.safeParse(rawFacilityId);
+    if (!parsedFacility.success) {
+      return jsonError(
+        400,
+        "INVALID_FACILITY_ID",
+        "The requested facility identifier format is invalid.",
+      );
+    }
+    requestedFacilityId = parsedFacility.data;
+  }
+
+  const repository = deps.repository ?? createDrizzleStaffRepository();
+  const now = deps.now ?? (() => new Date());
+
+  try {
+    const authContext = await requireAuthorizedStaff({
+      authorizationHeader: request.authorizationHeader,
+      cookieHeader: request.cookieHeader,
+      requestedFacilityId,
+      strictFacilityMatch: true,
+      allowedRoles: ADMIN_ONLY_ROLES,
+      verifyToken: deps.verifyToken,
+      repository,
+      env: deps.env,
+      now: deps.now,
+      revocationStore: deps.revocationStore,
+    });
+
+    const overview = repository.getFacilityAdminOverview
+      ? await repository.getFacilityAdminOverview(
+          authContext.activeFacility.facilityId,
+        )
+      : null;
+
+    if (!overview) {
+      return jsonError(
+        404,
+        "FACILITY_NOT_FOUND",
+        "No facility record was found for your authorized facility scope.",
+      );
+    }
+
+    const payload: StaffAdminFacilityOverviewResponse =
+      StaffAdminFacilityOverviewResponseSchema.parse({
+        facility: {
+          facilityId: overview.facilityId,
+          facilityName: overview.facilityName,
+          facilityPublicCode: overview.facilityPublicCode,
+          role: "admin",
+          isDemo: overview.isDemo,
+          timezone: overview.timezone,
+          active: overview.active,
+        },
+        metrics: {
+          activeStaffCount: overview.activeStaffCount,
+          totalIntakesCount: overview.totalIntakesCount,
+          unassignedIntakesCount: overview.unassignedIntakesCount,
+        },
+        roleBoundaries: {
+          currentRole: "admin",
+          isDemoSession: authContext.authMode === "demo",
+          canAccessAdminOverview: true,
+          staffProvisioningSupportedInPhase: false,
+          intakeMutationsSupportedInPhase: false,
+        },
         fetchedAt: now().toISOString(),
       });
 

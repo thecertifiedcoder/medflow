@@ -86,6 +86,12 @@ export const ResolvedStaffProfileSchema = z
   .strict();
 export type ResolvedStaffProfile = z.infer<typeof ResolvedStaffProfileSchema>;
 
+export const AuthModeSchema = z.enum(["firebase", "demo"]);
+export type AuthMode = z.infer<typeof AuthModeSchema>;
+
+export const DemoPersonaSchema = z.enum(["admin", "clinical_staff"]);
+export type DemoPersona = z.infer<typeof DemoPersonaSchema>;
+
 const SessionIdentitySchema = z
   .object({
     uid: z.string().min(1),
@@ -98,6 +104,9 @@ const SessionIdentitySchema = z
 const SessionBaseSchema = z.object({
   authenticated: z.literal(true),
   verifiedByServer: z.literal(true),
+  authMode: AuthModeSchema,
+  demoPersona: DemoPersonaSchema.nullable(),
+  sessionExpiresAt: z.string().datetime().nullable(),
   projectId: z.string().min(1),
   authorizationModel: z.literal("neon_postgres_server_rbac"),
   user: SessionIdentitySchema,
@@ -318,4 +327,55 @@ export const StaffIntakeDetailResponseSchema = z
   .strict();
 export type StaffIntakeDetailResponse = z.infer<
   typeof StaffIntakeDetailResponseSchema
+>;
+
+// =============================================================================
+// Hackathon Demo Mode & Admin Facility Overview Contracts (DA-1)
+// =============================================================================
+
+export const DemoStatusResponseSchema = z
+  .object({
+    enabled: z.boolean(),
+    configured: z.boolean(),
+    facilityPublicCode: z.string().min(1).max(64),
+    hasActiveDemoSession: z.boolean(),
+  })
+  .strict();
+export type DemoStatusResponse = z.infer<typeof DemoStatusResponseSchema>;
+
+export const DemoLogoutResponseSchema = z
+  .object({
+    loggedOut: z.literal(true),
+    revoked: z.boolean(),
+  })
+  .strict();
+export type DemoLogoutResponse = z.infer<typeof DemoLogoutResponseSchema>;
+
+export const StaffAdminFacilityOverviewResponseSchema = z
+  .object({
+    facility: AuthorizedFacilityMembershipSchema.extend({
+      timezone: z.string().min(1).max(64),
+      active: z.boolean(),
+    }).strict(),
+    metrics: z
+      .object({
+        activeStaffCount: z.number().int().min(0),
+        totalIntakesCount: z.number().int().min(0),
+        unassignedIntakesCount: z.number().int().min(0),
+      })
+      .strict(),
+    roleBoundaries: z
+      .object({
+        currentRole: z.literal("admin"),
+        isDemoSession: z.boolean(),
+        canAccessAdminOverview: z.literal(true),
+        staffProvisioningSupportedInPhase: z.literal(false),
+        intakeMutationsSupportedInPhase: z.literal(false),
+      })
+      .strict(),
+    fetchedAt: z.string().datetime(),
+  })
+  .strict();
+export type StaffAdminFacilityOverviewResponse = z.infer<
+  typeof StaffAdminFacilityOverviewResponseSchema
 >;

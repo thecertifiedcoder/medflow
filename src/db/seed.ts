@@ -1,7 +1,10 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { z } from "zod";
-import { CANONICAL_DEMO_FACILITY } from "@/db/invariants";
+import {
+  CANONICAL_DEMO_FACILITY,
+  SYNTHETIC_DEMO_IDENTITIES,
+} from "@/db/invariants";
 import {
   facilities,
   facilityMemberships,
@@ -107,6 +110,50 @@ export async function runSeed(): Promise<void> {
           },
         });
 
+      // Seed the two fixed synthetic Hackathon Demo Mode staff identities strictly
+      // inside the canonical synthetic facility `demo-clinic-01` (DA-1).
+      // These accounts are only usable when MEDFLOW_DEMO_MODE_ENABLED=true and are
+      // explicitly blocked from Firebase Bearer authentication.
+      for (const demoIdentity of Object.values(SYNTHETIC_DEMO_IDENTITIES)) {
+        await tx
+          .insert(staffProfiles)
+          .values({
+            uid: demoIdentity.uid,
+            email: demoIdentity.email,
+            displayName: demoIdentity.displayName,
+            active: true,
+          })
+          .onConflictDoUpdate({
+            target: staffProfiles.uid,
+            set: {
+              email: demoIdentity.email,
+              displayName: demoIdentity.displayName,
+              active: true,
+              updatedAt: new Date(),
+            },
+          });
+
+        await tx
+          .insert(facilityMemberships)
+          .values({
+            staffUid: demoIdentity.uid,
+            facilityId: CANONICAL_DEMO_FACILITY.id,
+            role: demoIdentity.role,
+            active: true,
+          })
+          .onConflictDoUpdate({
+            target: [
+              facilityMemberships.staffUid,
+              facilityMemberships.facilityId,
+            ],
+            set: {
+              role: demoIdentity.role,
+              active: true,
+              updatedAt: new Date(),
+            },
+          });
+      }
+
       if (adminInput) {
         await tx
           .insert(staffProfiles)
@@ -149,7 +196,7 @@ export async function runSeed(): Promise<void> {
     });
 
     console.info(
-      `Seeded canonical synthetic facility ${CANONICAL_DEMO_FACILITY.id} (${CANONICAL_DEMO_FACILITY.publicCode}).`,
+      `Seeded canonical synthetic facility ${CANONICAL_DEMO_FACILITY.id} (${CANONICAL_DEMO_FACILITY.publicCode}) and synthetic demo staff identities (demo-admin-01, demo-staff-01).`,
     );
     if (adminInput) {
       console.info(
@@ -157,7 +204,7 @@ export async function runSeed(): Promise<void> {
       );
     } else {
       console.info(
-        "No SEED_ADMIN_* variables supplied; skipped initial staff profile seeding.",
+        "No SEED_ADMIN_* variables supplied; skipped initial Firebase staff profile seeding.",
       );
     }
   } finally {

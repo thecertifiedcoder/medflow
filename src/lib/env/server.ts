@@ -9,7 +9,21 @@ export interface ServerConfig {
   readonly hasGeminiApiKey: boolean;
   readonly hasDatabaseUrl: boolean;
   readonly hasDatabaseUrlUnpooled: boolean;
+  readonly demoModeEnabled: boolean;
+  readonly demoModeReady: boolean;
 }
+
+export interface DemoModeConfig {
+  readonly enabled: boolean;
+  readonly configured: boolean;
+  readonly ttlSeconds: number;
+  readonly configError: string | null;
+}
+
+export const MIN_DEMO_SESSION_SECRET_LENGTH = 32;
+export const DEFAULT_DEMO_SESSION_TTL_SECONDS = 7200; // 2 hours
+export const MIN_DEMO_SESSION_TTL_SECONDS = 300; // 5 minutes
+export const MAX_DEMO_SESSION_TTL_SECONDS = 28800; // 8 hours
 
 const DEFAULT_DEMO_FACILITY_ID = "demo-clinic-01";
 const RETIRED_DEMO_FACILITY_ID = "demo-facility-001";
@@ -81,6 +95,100 @@ export function getMigrationDatabaseUrl(
   return getDatabaseUrl(env);
 }
 
+/**
+ * Evaluates server-only Hackathon Demo Mode configuration (DA-1).
+ *
+ * - Disabled by default whenever MEDFLOW_DEMO_MODE_ENABLED is not strictly "true".
+ * - Fails closed if enabled without a valid server-only MEDFLOW_DEMO_SESSION_SECRET
+ *   of at least 32 characters.
+ * - Never returns the raw signing secret.
+ */
+export function getDemoModeConfig(
+  env: Record<string, string | undefined> = process.env,
+): DemoModeConfig {
+  assertServerRuntime();
+
+  const rawEnabled = env.MEDFLOW_DEMO_MODE_ENABLED?.trim().toLowerCase();
+  const enabled = rawEnabled === "true";
+
+  const rawTtl = env.MEDFLOW_DEMO_SESSION_TTL_SECONDS?.trim();
+  let ttlSeconds = DEFAULT_DEMO_SESSION_TTL_SECONDS;
+  let ttlInvalid = false;
+
+  if (rawTtl !== undefined && rawTtl.length > 0) {
+    if (!/^\d+$/.test(rawTtl)) {
+      ttlInvalid = true;
+    } else {
+      const parsed = Number.parseInt(rawTtl, 10);
+      if (
+        !Number.isFinite(parsed) ||
+        parsed < MIN_DEMO_SESSION_TTL_SECONDS ||
+        parsed > MAX_DEMO_SESSION_TTL_SECONDS
+      ) {
+        ttlInvalid = true;
+      } else {
+        ttlSeconds = parsed;
+      }
+    }
+  }
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      configured: false,
+      ttlSeconds,
+      configError: null,
+    };
+  }
+
+  const secret = env.MEDFLOW_DEMO_SESSION_SECRET?.trim() ?? "";
+  if (secret.length < MIN_DEMO_SESSION_SECRET_LENGTH) {
+    return {
+      enabled: true,
+      configured: false,
+      ttlSeconds,
+      configError:
+        "MEDFLOW_DEMO_SESSION_SECRET must be configured with at least 32 characters when Demo Mode is enabled.",
+    };
+  }
+
+  if (ttlInvalid) {
+    return {
+      enabled: true,
+      configured: false,
+      ttlSeconds: DEFAULT_DEMO_SESSION_TTL_SECONDS,
+      configError: `MEDFLOW_DEMO_SESSION_TTL_SECONDS must be an integer between ${MIN_DEMO_SESSION_TTL_SECONDS} and ${MAX_DEMO_SESSION_TTL_SECONDS}.`,
+    };
+  }
+
+  return {
+    enabled: true,
+    configured: true,
+    ttlSeconds,
+    configError: null,
+  };
+}
+
+/**
+ * Returns the server-only HMAC signing secret for Hackathon Demo Mode sessions.
+ * Throws if Demo Mode is disabled or the secret fails validation (fail-closed).
+ */
+export function getDemoSessionSecret(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  assertServerRuntime();
+  const config = getDemoModeConfig(env);
+  if (!config.enabled) {
+    throw new Error("Hackathon Demo Mode is disabled on this server.");
+  }
+  if (!config.configured) {
+    throw new Error(
+      config.configError ?? "Hackathon Demo Mode session configuration is invalid.",
+    );
+  }
+  return env.MEDFLOW_DEMO_SESSION_SECRET!.trim();
+}
+
 export function getServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
@@ -126,5 +234,8 @@ export function getServerConfig(
     hasDatabaseUrlUnpooled: Boolean(
       databaseUrlUnpooled && isPostgresUrl(databaseUrlUnpooled),
     ),
+    demoModeEnabled: getDemoModeConfig(env).enabled,
+    demoModeReady:
+      getDemoModeConfig(env).enabled && getDemoModeConfig(env).configured,
   };
 }

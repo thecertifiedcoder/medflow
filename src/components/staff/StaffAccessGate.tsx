@@ -154,7 +154,7 @@ export function StaffAccessGate({
         {status === "unauthenticated" && (
           <Alert tone="danger" title="Staff authentication required">
             {errorMessage ??
-              "Unauthenticated users cannot view clinical intake records or the facility queue. Sign in with a provisioned Google staff account to continue."}
+              "Unauthenticated users cannot view clinical intake records or the facility queue. Sign in with a provisioned Google staff account or enter Hackathon Demo Mode from the overview page."}
           </Alert>
         )}
 

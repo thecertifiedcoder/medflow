@@ -112,6 +112,41 @@ test(
       assert.equal(row.name, "MedFlow Synthetic Demo Clinic");
       assert.equal(row.active, true);
       assert.equal(row.is_demo, true);
+
+      const demoStaffRes = await pool.query<{
+        uid: string;
+        active: boolean;
+        facility_id: string;
+        role: string;
+        membership_active: boolean;
+      }>(
+        `SELECT sp.uid, sp.active, fm.facility_id, fm.role, fm.active AS membership_active
+         FROM staff_profiles sp
+         INNER JOIN facility_memberships fm ON fm.staff_uid = sp.uid
+         WHERE sp.uid IN ('demo-admin-01', 'demo-staff-01')
+         ORDER BY sp.uid ASC`,
+      );
+      assert.equal(
+        demoStaffRes.rows.length,
+        2,
+        "Expected seeded demo-admin-01 and demo-staff-01 memberships in demo-clinic-01",
+      );
+      assert.deepEqual(demoStaffRes.rows, [
+        {
+          uid: "demo-admin-01",
+          active: true,
+          facility_id: "demo-clinic-01",
+          role: "admin",
+          membership_active: true,
+        },
+        {
+          uid: "demo-staff-01",
+          active: true,
+          facility_id: "demo-clinic-01",
+          role: "nurse",
+          membership_active: true,
+        },
+      ]);
     } finally {
       await pool.end();
     }
@@ -460,6 +495,27 @@ test(
         "00000000-0000-4000-8000-000000000001",
       );
       assert.equal(missingDetail, null);
+
+      const demoAdminAuth = await repo.findStaffAuthorizationByUid("demo-admin-01");
+      assert.ok(demoAdminAuth, "Expected demo-admin-01 to be seeded in Neon");
+      assert.equal(demoAdminAuth.profile.active, true);
+      assert.equal(demoAdminAuth.memberships[0]?.facilityId, "demo-clinic-01");
+      assert.equal(demoAdminAuth.memberships[0]?.role, "admin");
+
+      const demoStaffAuth = await repo.findStaffAuthorizationByUid("demo-staff-01");
+      assert.ok(demoStaffAuth, "Expected demo-staff-01 to be seeded in Neon");
+      assert.equal(demoStaffAuth.profile.active, true);
+      assert.equal(demoStaffAuth.memberships[0]?.facilityId, "demo-clinic-01");
+      assert.equal(demoStaffAuth.memberships[0]?.role, "nurse");
+
+      assert.ok(repo.getFacilityAdminOverview);
+      const overview = await repo.getFacilityAdminOverview(
+        CANONICAL_DEMO_FACILITY.id,
+      );
+      assert.ok(overview, "Expected facility admin overview for demo-clinic-01");
+      assert.equal(overview.facilityId, "demo-clinic-01");
+      assert.equal(overview.isDemo, true);
+      assert.ok(overview.activeStaffCount >= 2);
     } finally {
       await closeDbPool();
     }

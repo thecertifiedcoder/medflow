@@ -18,6 +18,63 @@ export const CANONICAL_DEMO_FACILITY = {
   active: true,
 } as const;
 
+export type DemoPersonaKey = "admin" | "clinical_staff";
+
+export interface SyntheticDemoIdentity {
+  readonly persona: DemoPersonaKey;
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly uid: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly role: "admin" | "nurse";
+  readonly facilityId: typeof CANONICAL_DEMO_FACILITY.id;
+}
+
+/**
+ * Fixed, server-defined synthetic demo identities for Hackathon Demo Mode (DA-1).
+ * Bound exclusively to the canonical synthetic facility `demo-clinic-01`.
+ * Never granted access to any non-demo facility.
+ */
+export const SYNTHETIC_DEMO_IDENTITIES: Readonly<
+  Record<DemoPersonaKey, SyntheticDemoIdentity>
+> = {
+  admin: {
+    persona: "admin",
+    label: "Demo Administrator",
+    shortLabel: "Demo Admin",
+    uid: "demo-admin-01",
+    email: "demo-admin@synthetic.medflow.local",
+    displayName: "Demo Administrator (Synthetic)",
+    role: "admin",
+    facilityId: CANONICAL_DEMO_FACILITY.id,
+  },
+  clinical_staff: {
+    persona: "clinical_staff",
+    label: "Demo Clinical Staff",
+    shortLabel: "Demo Staff",
+    uid: "demo-staff-01",
+    email: "demo-staff@synthetic.medflow.local",
+    displayName: "Demo Clinical Staff (Synthetic)",
+    role: "nurse",
+    facilityId: CANONICAL_DEMO_FACILITY.id,
+  },
+} as const;
+
+const RESERVED_DEMO_UIDS = new Set<string>(
+  Object.values(SYNTHETIC_DEMO_IDENTITIES).map((identity) => identity.uid),
+);
+
+export function getSyntheticDemoIdentity(
+  persona: DemoPersonaKey,
+): SyntheticDemoIdentity {
+  return SYNTHETIC_DEMO_IDENTITIES[persona];
+}
+
+export function isReservedDemoUid(uid: string): boolean {
+  return RESERVED_DEMO_UIDS.has(uid);
+}
+
 /**
  * Authoritative action-to-actor mapping enforced both in TypeScript and in
  * PostgreSQL CHECK constraint `audit_events_action_actor_mapping_chk`.

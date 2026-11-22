@@ -26,8 +26,16 @@ import {
   type StaffAssignedPriority,
   type WorkflowStatus,
 } from "@/lib/schemas/intake";
-import type { StaffQueueItem, StaffQueueResponse } from "@/lib/schemas/staff-api";
-import { fetchStaffQueue, StaffApiClientError } from "@/lib/staff/api-client";
+import type {
+  StaffAdminFacilityOverviewResponse,
+  StaffQueueItem,
+  StaffQueueResponse,
+} from "@/lib/schemas/staff-api";
+import {
+  fetchStaffAdminFacilityOverview,
+  fetchStaffQueue,
+  StaffApiClientError,
+} from "@/lib/staff/api-client";
 import {
   createVisibilityAwarePoller,
   QUEUE_POLL_INTERVAL_MS,
@@ -60,6 +68,7 @@ function formatShortTimestamp(iso: string): string {
 
 function AuthorizedStaffQueue({
   staffProfile,
+  serverSession,
   activeFacility,
   activeFacilityId,
   getIdToken,
@@ -67,6 +76,11 @@ function AuthorizedStaffQueue({
 }: AuthorizedStaffContext) {
   const { setActiveFacilityId, signOutStaff } = useStaffAuth();
   const [queueData, setQueueData] = useState<StaffQueueResponse | null>(null);
+  const [adminOverview, setAdminOverview] =
+    useState<StaffAdminFacilityOverviewResponse | null>(null);
+  const [adminOverviewError, setAdminOverviewError] = useState<string | null>(
+    null,
+  );
   const [loadedQueryKey, setLoadedQueryKey] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPausedHidden, setIsPausedHidden] = useState(false);
@@ -77,6 +91,9 @@ function AuthorizedStaffQueue({
   >("");
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [offset, setOffset] = useState(0);
+
+  const isAdminRole = activeFacility.role === "admin";
+  const isDemoSession = serverSession.authMode === "demo";
 
   const queryKey = `${activeFacilityId}|${workflowFilter}|${priorityFilter}|${includeCompleted}|${offset}`;
   const isInitialLoading = loadedQueryKey !== queryKey && errorMessage === null;
@@ -164,6 +181,52 @@ function AuthorizedStaffQueue({
     };
   }, [loadQueue]);
 
+  useEffect(() => {
+    if (!isAdminRole) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const loadAdminOverview = async () => {
+      try {
+        const overview = await fetchStaffAdminFacilityOverview({
+          getIdToken,
+          facilityId: activeFacilityId,
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+        setAdminOverview(overview);
+        setAdminOverviewError(null);
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof StaffApiClientError && err.isAuthExpired) {
+          handleSessionExpired(err.message);
+          return;
+        }
+        setAdminOverviewError(
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Unable to load facility administration overview.",
+        );
+      }
+    };
+
+    void loadAdminOverview();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [activeFacilityId, getIdToken, handleSessionExpired, isAdminRole]);
+
+  const visibleAdminOverview =
+    isAdminRole && adminOverview?.facility.facilityId === activeFacilityId
+      ? adminOverview
+      : null;
+  const visibleAdminOverviewError = isAdminRole ? adminOverviewError : null;
+
   const rows: readonly StaffQueueItem[] = queueData?.items ?? [];
   const totalCount = queueData?.pagination.total ?? 0;
   const unassignedCount = queueData?.counts.unassigned ?? 0;
@@ -209,7 +272,13 @@ function AuthorizedStaffQueue({
             <div className="font-semibold text-white">
               {staffProfile.displayName}
             </div>
-            <div className="capitalize">{activeFacility.role}</div>
+            <div className="capitalize">
+              {isDemoSession
+                ? serverSession.demoPersona === "admin"
+                  ? "Demo Administrator (admin)"
+                  : "Demo Clinical Staff (nurse)"
+                : activeFacility.role}
+            </div>
             <div className="mf-mono text-[11px]">{activeFacilityId}</div>
           </div>
         </aside>
@@ -217,7 +286,18 @@ function AuthorizedStaffQueue({
         <main className="mf-dash__detail">
           <div className="mf-detail-head justify-between">
             <div className="grid gap-1">
-              <span className="mf-eyebrow">Facility-scoped staff workspace</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mf-eyebrow">
+                  Facility-scoped staff workspace
+                </span>
+                {isDemoSession && (
+                  <Badge tone="brand" icon="shield">
+                    {serverSession.demoPersona === "admin"
+                      ? "Hackathon Demo · Administrator"
+                      : "Hackathon Demo · Clinical Staff"}
+                  </Badge>
+                )}
+              </div>
               <h1 className="mf-t-page m-0 text-[var(--mf-text)]">
                 Clinical intake queue
               </h1>
@@ -270,6 +350,60 @@ function AuthorizedStaffQueue({
               </Button>
             </div>
           </div>
+
+          {isAdminRole && (
+            <ClinicalPanel
+              source="nurse"
+              sourceLabel="Administrator view"
+              title="Facility administration overview"
+              subtitle="Read-only PostgreSQL summary restricted strictly to the administrator role."
+              action={<Badge tone="brand">Role: admin</Badge>}
+              className="mb-5"
+            >
+              {visibleAdminOverviewError ? (
+                <Alert tone="warning" title="Facility overview unavailable">
+                  {visibleAdminOverviewError}
+                </Alert>
+              ) : visibleAdminOverview ? (
+                <div className="grid gap-3">
+                  <dl className="mf-dl m-0">
+                    <dt>Facility ID / Public code</dt>
+                    <dd className="mf-mono text-[13px]">
+                      {visibleAdminOverview.facility.facilityId} ·{" "}
+                      {visibleAdminOverview.facility.facilityPublicCode}
+                    </dd>
+                    <dt>Facility type &amp; timezone</dt>
+                    <dd>
+                      {visibleAdminOverview.facility.isDemo
+                        ? "Synthetic demo clinic"
+                        : "Facility"}{" "}
+                      · {visibleAdminOverview.facility.timezone}
+                    </dd>
+                    <dt>Active staff memberships</dt>
+                    <dd className="mf-mono text-[13px]">
+                      {visibleAdminOverview.metrics.activeStaffCount}
+                    </dd>
+                    <dt>Stored intake records</dt>
+                    <dd className="mf-mono text-[13px]">
+                      {visibleAdminOverview.metrics.totalIntakesCount} total (
+                      {visibleAdminOverview.metrics.unassignedIntakesCount}{" "}
+                      unassigned)
+                    </dd>
+                  </dl>
+                  <p className="m-0 text-[12px] text-[var(--mf-text-secondary)]">
+                    Current scope (DA-1): read-only facility governance summary.
+                    Staff account provisioning remains controlled via CLI
+                    seeding, and intake mutations activate in Milestone 2.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-[13px] text-[var(--mf-text-secondary)]">
+                  <Icon name="loader" size="sm" spin />
+                  <span>Loading administrator facility overview...</span>
+                </div>
+              )}
+            </ClinicalPanel>
+          )}
 
           <ClinicalPanel
             source="nurse"

@@ -18,6 +18,7 @@ export async function GET(request: NextRequest, context: RouteParams) {
   const { intakeId } = await context.params;
   return handleStaffIntakeDetailGet({
     authorizationHeader: request.headers.get("authorization"),
+    cookieHeader: request.headers.get("cookie"),
     intakeId,
     searchParams: request.nextUrl.searchParams,
   });

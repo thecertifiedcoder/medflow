@@ -39,12 +39,17 @@ import {
   usesSameOriginAuthProxy,
 } from "@/lib/firebase/client";
 import type {
+  AuthMode,
   AuthorizedFacilityMembership,
+  DemoPersona,
   PostgresStaffSessionResponse,
   ResolvedStaffProfile,
 } from "@/lib/schemas/staff-api";
 import {
+  createDemoSession,
+  fetchDemoStatus,
   fetchStaffSession,
+  logoutDemoSession,
   StaffApiClientError,
 } from "@/lib/staff/api-client";
 
@@ -57,6 +62,10 @@ export type {
 
 export interface StaffAuthState {
   readonly status: StaffAuthStatus;
+  readonly authMode: AuthMode | null;
+  readonly demoPersona: DemoPersona | null;
+  readonly isDemoEntering: boolean;
+  readonly enteringDemoPersona: DemoPersona | null;
   readonly firebaseUser: {
     readonly uid: string;
     readonly email: string | null;
@@ -76,6 +85,9 @@ export interface StaffAuthState {
   readonly isSigningIn: boolean;
   readonly getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
   readonly handleSessionExpired: (message?: string) => void;
+  readonly enterDemoSession: (
+    persona: DemoPersona,
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
   readonly signInWithGoogle: () => Promise<void>;
   readonly signInWithGooglePopup: () => Promise<void>;
   readonly signInWithGoogleRedirect: () => Promise<void>;
@@ -125,6 +137,11 @@ function buildInitialDiagnostics(): AuthDiagnostics {
 
 export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StaffAuthStatus>("initializing");
+  const [authMode, setAuthMode] = useState<AuthMode | null>(null);
+  const [demoPersona, setDemoPersona] = useState<DemoPersona | null>(null);
+  const [isDemoEntering, setIsDemoEntering] = useState(false);
+  const [enteringDemoPersona, setEnteringDemoPersona] =
+    useState<DemoPersona | null>(null);
   const [rawUser, setRawUser] = useState<User | null>(null);
   const [serverSession, setServerSession] =
     useState<PostgresStaffSessionResponse | null>(null);
@@ -148,15 +165,24 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const activeUserUidRef = useRef<string | null>(null);
   const preferredFacilityIdRef = useRef<string | null>(null);
   const authAttemptInFlightRef = useRef(false);
+  const demoAttemptInFlightRef = useRef(false);
   const authResolvedRef = useRef(false);
   const statusRef = useRef<StaffAuthStatus>(status);
+  const authModeRef = useRef<AuthMode | null>(authMode);
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
+  useEffect(() => {
+    authModeRef.current = authMode;
+  }, [authMode]);
+
   const getIdToken = useCallback(
     async (forceRefresh = false): Promise<string | null> => {
+      if (authModeRef.current === "demo") {
+        return null;
+      }
       const currentUser = auth.currentUser ?? rawUser;
       if (!currentUser) return null;
       try {
@@ -171,6 +197,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const handleSessionExpired = useCallback((message?: string) => {
     verificationRunIdRef.current += 1;
     verifyingUidRef.current = null;
+    setAuthMode(null);
+    setDemoPersona(null);
     setServerSession(null);
     setStaffProfile(null);
     setActiveFacility(null);
@@ -180,6 +208,104 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     );
     setStatus("unauthenticated");
   }, []);
+
+  const checkDemoCookieSession = useCallback(
+    async (options: { readonly showVerifyingState?: boolean } = {}) => {
+      const runId = ++verificationRunIdRef.current;
+      if (options.showVerifyingState) {
+        setStatus("verifying");
+      }
+
+      const controller = new AbortController();
+      const timeoutHandle = window.setTimeout(
+        () => controller.abort(),
+        SESSION_VERIFY_TIMEOUT_MS,
+      );
+
+      try {
+        const demoStatus = await fetchDemoStatus({
+          signal: controller.signal,
+        });
+
+        if (runId !== verificationRunIdRef.current) return;
+
+        if (
+          !demoStatus.enabled ||
+          !demoStatus.configured ||
+          !demoStatus.hasActiveDemoSession
+        ) {
+          setAuthMode(null);
+          setDemoPersona(null);
+          setServerSession(null);
+          setStaffProfile(null);
+          setActiveFacility(null);
+          setStatus("unauthenticated");
+          return;
+        }
+
+        const session = await fetchStaffSession({
+          getIdToken: async () => null,
+          allowCookieFallback: true,
+          signal: controller.signal,
+        });
+
+        if (runId !== verificationRunIdRef.current) return;
+
+        if (
+          session.authMode === "demo" &&
+          session.authorizationStatus === "authorized"
+        ) {
+          preferredFacilityIdRef.current = session.activeFacility.facilityId;
+          setAuthMode("demo");
+          setDemoPersona(session.demoPersona);
+          setServerSession(session);
+          setStaffProfile(session.staffProfile);
+          setActiveFacility(session.activeFacility);
+          setErrorMessage(null);
+          setAuthNotice(null);
+          setStatus("authorized");
+          return;
+        }
+
+        setAuthMode(null);
+        setDemoPersona(null);
+        setServerSession(null);
+        setStaffProfile(null);
+        setActiveFacility(null);
+        setStatus("unauthenticated");
+      } catch (err) {
+        if (runId !== verificationRunIdRef.current) return;
+
+        setAuthMode(null);
+        setDemoPersona(null);
+        setServerSession(null);
+        setStaffProfile(null);
+        setActiveFacility(null);
+
+        if (err instanceof StaffApiClientError) {
+          if (
+            err.code === "DEMO_SESSION_EXPIRED" ||
+            err.code === "DEMO_SESSION_REVOKED" ||
+            err.code === "DEMO_SESSION_INVALID"
+          ) {
+            setAuthNotice(err.message);
+            setErrorMessage(null);
+            setStatus("unauthenticated");
+            return;
+          }
+          if (err.status === 401 || err.code === "DEMO_MODE_DISABLED") {
+            setStatus("unauthenticated");
+            return;
+          }
+        }
+
+        setStatus("unauthenticated");
+      } finally {
+        window.clearTimeout(timeoutHandle);
+      }
+    },
+    [],
+  );
 
   const verifyUserAndProfile = useCallback(
     async (user: User, force = false) => {
@@ -240,6 +366,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         }
 
         setServerSession(session);
+        setAuthMode(session.authMode);
+        setDemoPersona(session.demoPersona);
 
         if (session.authorizationStatus === "unprovisioned") {
           setStaffProfile(null);
@@ -474,15 +602,11 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         if (!user) {
           activeUserUidRef.current = null;
           verifyingUidRef.current = null;
-          verificationRunIdRef.current += 1;
           authAttemptInFlightRef.current = false;
           setRawUser(null);
-          setServerSession(null);
-          setStaffProfile(null);
-          setActiveFacility(null);
           setIsSigningIn(false);
           if (!redirectErrored && statusRef.current !== "error") {
-            setStatus("unauthenticated");
+            void checkDemoCookieSession();
           }
           return;
         }
@@ -531,7 +655,67 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(initTimeoutId);
       unsubscribe();
     };
-  }, [verifyUserAndProfile]);
+  }, [checkDemoCookieSession, verifyUserAndProfile]);
+
+  const enterDemoSession = useCallback(
+    async (
+      persona: DemoPersona,
+    ): Promise<
+      { readonly ok: true } | { readonly ok: false; readonly message: string }
+    > => {
+      if (demoAttemptInFlightRef.current) {
+        return {
+          ok: false,
+          message: "A demo session request is already in progress.",
+        };
+      }
+
+      demoAttemptInFlightRef.current = true;
+      setIsDemoEntering(true);
+      setEnteringDemoPersona(persona);
+      setErrorMessage(null);
+      setAuthNotice(null);
+
+      try {
+        // If a normal Firebase user was signed in, sign out cleanly so the demo
+        // session does not collide with a Firebase Bearer token.
+        if (auth.currentUser) {
+          await signOut(auth).catch(() => undefined);
+          setRawUser(null);
+          activeUserUidRef.current = null;
+        }
+
+        const session = await createDemoSession(persona);
+        if (session.authorizationStatus !== "authorized") {
+          const msg = "Unable to establish an authorized demo session.";
+          setErrorMessage(msg);
+          return { ok: false, message: msg };
+        }
+
+        verificationRunIdRef.current += 1;
+        preferredFacilityIdRef.current = session.activeFacility.facilityId;
+        setAuthMode("demo");
+        setDemoPersona(session.demoPersona);
+        setServerSession(session);
+        setStaffProfile(session.staffProfile);
+        setActiveFacility(session.activeFacility);
+        setStatus("authorized");
+        return { ok: true };
+      } catch (err) {
+        const message =
+          err instanceof StaffApiClientError
+            ? err.message
+            : "Unable to start Hackathon Demo Mode right now. Please try again.";
+        setErrorMessage(message);
+        return { ok: false, message };
+      } finally {
+        demoAttemptInFlightRef.current = false;
+        setIsDemoEntering(false);
+        setEnteringDemoPersona(null);
+      }
+    },
+    [],
+  );
 
   const startRedirectSignIn = useCallback(async () => {
     const embedded = isEmbeddedInIframe();
@@ -706,15 +890,25 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     activeUserUidRef.current = null;
     preferredFacilityIdRef.current = null;
     authAttemptInFlightRef.current = false;
+    demoAttemptInFlightRef.current = false;
     writeRedirectPendingFlag(false);
     setErrorMessage(null);
     setAuthNotice(null);
     setCanUseRedirectFallback(false);
     setSuggestOpenInStandaloneTab(false);
     setIsSigningIn(false);
+    setIsDemoEntering(false);
+    setEnteringDemoPersona(null);
     try {
-      await signOut(auth);
+      if (authModeRef.current === "demo" || !auth.currentUser) {
+        await logoutDemoSession().catch(() => undefined);
+      }
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
       setRawUser(null);
+      setAuthMode(null);
+      setDemoPersona(null);
       setServerSession(null);
       setStaffProfile(null);
       setActiveFacility(null);
@@ -756,7 +950,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         await verifyUserAndProfile(auth.currentUser, true);
       } else {
         setRawUser(null);
-        setStatus("unauthenticated");
+        await checkDemoCookieSession({ showVerifyingState: true });
       }
     } catch {
       const embedded = isEmbeddedInIframe();
@@ -767,7 +961,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       setSuggestOpenInStandaloneTab(embedded);
       setStatus("error");
     }
-  }, [verifyUserAndProfile]);
+  }, [checkDemoCookieSession, verifyUserAndProfile]);
 
   const setActiveFacilityId = useCallback(
     (facilityId: string) => {
@@ -806,6 +1000,10 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     <StaffAuthContext.Provider
       value={{
         status,
+        authMode,
+        demoPersona,
+        isDemoEntering,
+        enteringDemoPersona,
         firebaseUser,
         serverSession,
         staffProfile,
@@ -820,6 +1018,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
         isSigningIn,
         getIdToken,
         handleSessionExpired,
+        enterDemoSession,
         signInWithGoogle,
         signInWithGooglePopup,
         signInWithGoogleRedirect,

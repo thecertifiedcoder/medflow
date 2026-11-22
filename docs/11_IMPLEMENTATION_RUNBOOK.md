@@ -160,6 +160,13 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
 - Executed live PostgreSQL schema, trigger, and negative constraint verification (PG-01 through PG-06 inside a rolled-back transaction) plus live pooled `DATABASE_URL` Drizzle reads via `createDrizzleStaffRepository()`.
 - Removed all legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), removed `@firebase/eslint-plugin-security-rules`, and refactored `src/lib/firebase/client.ts` & `config.ts` to Firebase Authentication only while keeping Google Sign-In and the same-origin `/__/auth/*` proxy intact.
 
+### Phase DA-1 — Hackathon Demo Access (implemented & verified under ADR `D-021`)
+
+- Added server-controlled Hackathon Demo Mode (`MEDFLOW_DEMO_MODE_ENABLED` disabled by default; `MEDFLOW_DEMO_SESSION_SECRET` ≥ 32 chars required fail-closed; optional `MEDFLOW_DEMO_SESSION_TTL_SECONDS`).
+- Extended idempotent `src/db/seed.ts` to seed canonical synthetic demo accounts `demo-admin-01` (`admin`) and `demo-staff-01` (`nurse`) strictly inside `demo-clinic-01` (`DEMO-CLINIC-01`) with zero Neon schema changes.
+- Implemented HMAC-SHA256 signed HTTP-only cookie sessions (`src/lib/auth/demo-session.ts`), CSRF protection, server-side revocation (`POST /api/demo/logout`), persona endpoints (`POST /api/demo/session/admin`, `POST /api/demo/session/staff`, `GET /api/demo/status`), unified `resolveStaffSession`/`requireAuthorizedStaff` enforcement, and read-only admin-only `GET /api/staff/admin/facility`.
+- Updated `/` with the prominent **Try the MedFlow Demo** launcher (**Demo Administrator**, **Demo Clinical Staff**, **Start Patient Intake**), added active demo role badge & **Sign out** in header/workspace, and preserved Firebase Google Sign-In (`/staff/login`) completely intact.
+
 ### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval)
 
 - Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable PostgreSQL intake persistence (`POST /api/intakes` atomic transaction with `intake_created` / `transcript_confirmed` audit events).
