@@ -97,8 +97,6 @@ src/
     schemas/
     services/
     utils/
-  styles/
-    design-tokens.css
 tests/
   unit/
   integration/
