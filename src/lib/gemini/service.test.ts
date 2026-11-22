@@ -106,10 +106,11 @@ test("groundBriefQuotesAgainstNarrative preserves exact verbatim substrings and 
     "Chest tightness with dizziness",
   );
 
-  // Explicit grounding note appended to limitations
+  // Baseline limitations remain intact while ungroundedCount records the 3 stripped quotes
+  assert.equal(ungroundedCount, 3);
   assert.ok(
     brief.limitations.some((line: string) =>
-      line.includes("3 AI-proposed quote(s)"),
+      line.includes("requires qualified clinical staff review"),
     ),
   );
 });

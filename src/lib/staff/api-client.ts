@@ -28,7 +28,7 @@ import {
   type StaffStatusMutationRequest,
 } from "@/lib/schemas/staff-api";
 
-export const DEMO_CSRF_HEADER_NAME = "x-medflow-demo-csrf";
+export const DEMO_CSRF_HEADER_NAME = "x-medflow-demo-request";
 export const DEMO_CSRF_HEADER_VALUE = "1";
 
 export type GetIdTokenFn = (forceRefresh?: boolean) => Promise<string | null>;
@@ -92,8 +92,7 @@ async function performAuthenticatedRequest(options: {
   readonly fetchImpl?: typeof fetch;
 }): Promise<unknown> {
   const fetchFn = options.fetchImpl ?? fetch;
-  const executeAttempt = async (forceRefresh: boolean): Promise<Response> => {
-    const token = await options.getIdToken(forceRefresh);
+  const sendWithToken = async (token: string | null): Promise<Response> => {
     const headers: Record<string, string> = {
       Accept: "application/json",
     };
@@ -118,11 +117,12 @@ async function performAuthenticatedRequest(options: {
     });
   };
 
-  let response = await executeAttempt(false);
+  const initialToken = await options.getIdToken(false);
+  let response = await sendWithToken(initialToken);
   if (response.status === 401) {
     const refreshedToken = await options.getIdToken(true);
     if (refreshedToken) {
-      response = await executeAttempt(true);
+      response = await sendWithToken(refreshedToken);
     }
   }
 
@@ -245,7 +245,15 @@ export async function fetchStaffSession(options: {
     fetchImpl: options.fetchImpl,
   });
 
-  return PostgresStaffSessionResponseSchema.parse(rawBody);
+  const parsed = PostgresStaffSessionResponseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new StaffApiClientError(
+      502,
+      "INVALID_SESSION_RESPONSE",
+      "Server returned an unexpected staff session response.",
+    );
+  }
+  return parsed.data;
 }
 
 export async function fetchStaffQueue(options: {
@@ -286,7 +294,15 @@ export async function fetchStaffQueue(options: {
     fetchImpl: options.fetchImpl,
   });
 
-  return StaffQueueResponseSchema.parse(rawBody);
+  const parsed = StaffQueueResponseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new StaffApiClientError(
+      502,
+      "INVALID_QUEUE_RESPONSE",
+      "Server returned an unexpected facility queue response.",
+    );
+  }
+  return parsed.data;
 }
 
 export async function fetchStaffIntakeDetail(options: {
@@ -308,7 +324,15 @@ export async function fetchStaffIntakeDetail(options: {
     fetchImpl: options.fetchImpl,
   });
 
-  return StaffIntakeDetailResponseSchema.parse(rawBody);
+  const parsed = StaffIntakeDetailResponseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new StaffApiClientError(
+      502,
+      "INVALID_DETAIL_RESPONSE",
+      "Server returned an unexpected intake detail response.",
+    );
+  }
+  return parsed.data;
 }
 
 export async function fetchStaffAdminFacilityOverview(options: {
@@ -329,7 +353,15 @@ export async function fetchStaffAdminFacilityOverview(options: {
     fetchImpl: options.fetchImpl,
   });
 
-  return StaffAdminFacilityOverviewResponseSchema.parse(rawBody);
+  const parsed = StaffAdminFacilityOverviewResponseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new StaffApiClientError(
+      502,
+      "INVALID_ADMIN_OVERVIEW_RESPONSE",
+      "Server returned an unexpected facility administration overview response.",
+    );
+  }
+  return parsed.data;
 }
 
 // =============================================================================

@@ -28,7 +28,6 @@ export function AppHeader() {
 
   const isAuthorized = status === "authorized" && activeFacility !== null;
   const isAdmin = activeFacility?.role === "admin";
-  const defaultWorkspaceHref = isAdmin ? "/staff/admin" : "/staff/queue";
 
   // 1. Dedicated Patient Experience Header (/intake)
   // Completely isolated from staff navigation, admin controls, and demo role switchers.
@@ -145,89 +144,50 @@ export function AppHeader() {
   }
 
   // 3. Public & Entry Surfaces Header (/, /demo, /staff/login)
-  const navItems = [
-    { href: "/", label: "Home", match: pathname === "/" },
-    {
-      href: "/intake",
-      label: "Patient Intake",
-      match: pathname.startsWith("/intake"),
-    },
-    {
-      href: "/staff/login",
-      label: "Staff Sign-In",
-      match: pathname.startsWith("/staff/login"),
-    },
-    {
-      href: "/demo",
-      label: "Hackathon Demo",
-      match: pathname === "/demo" || pathname.startsWith("/demo/"),
-    },
-  ];
+  const isStaffLogin = pathname.startsWith("/staff/login");
+  const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
 
   return (
     <header
-      className="mf-dash__top flex-wrap justify-between gap-3 px-4 py-2.5 sm:px-6"
+      className="mf-dash__top px-4 sm:px-6"
       data-testid="public-top-bar"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-4 sm:gap-6">
+      <div className="mx-auto flex w-full max-w-[1160px] items-center justify-between gap-2">
         <Link
           href="/"
-          className="no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-primary-light)]"
+          className="shrink-0 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-primary-light)]"
         >
-          <BrandMark onDark subtitle="Clinical Intake & Workflow" />
+          <BrandMark onDark size="sm" />
         </Link>
 
         <nav
           aria-label="Primary navigation"
-          className="flex flex-wrap items-center gap-1.5"
+          className="flex shrink-0 items-center gap-1.5 sm:gap-2"
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={item.match ? "page" : undefined}
-              className={`inline-flex min-h-[36px] items-center rounded-[4px] px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
-                item.match
-                  ? "bg-[var(--mf-primary)] text-white"
-                  : "text-[var(--mf-navy-text)] hover:bg-[var(--mf-navy-800)] hover:text-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+          <Link
+            href="/staff/login"
+            aria-current={isStaffLogin ? "page" : undefined}
+            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] px-2.5 py-1.5 text-[13px] font-medium no-underline transition-colors sm:px-3 ${
+              isStaffLogin
+                ? "bg-[var(--mf-navy-700)] text-white"
+                : "text-[var(--mf-navy-text)] hover:bg-[var(--mf-navy-800)] hover:text-white"
+            }`}
+          >
+            Staff Sign-In
+          </Link>
+
+          <Link
+            href="/demo"
+            aria-current={isDemoRoute ? "page" : undefined}
+            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] border px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
+              isDemoRoute
+                ? "border-[var(--mf-primary)] bg-[var(--mf-primary)] text-white"
+                : "border-[var(--mf-navy-700)] bg-[var(--mf-navy-800)] text-white hover:border-[var(--mf-primary)] hover:bg-[var(--mf-navy-700)]"
+            }`}
+          >
+            Demo
+          </Link>
         </nav>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span className="mf-chip mf-chip--on-dark hidden md:inline-flex">
-          <Icon name="shield" size="sm" />
-          Synthetic demo only
-        </span>
-
-        {isAuthorized && activeFacility ? (
-          <>
-            <span className="mf-chip mf-chip--on-dark">
-              <Icon
-                name={authMode === "demo" ? "shield" : "userCheck"}
-                size="sm"
-              />
-              {authMode === "demo"
-                ? demoPersona === "admin"
-                  ? "Demo Admin"
-                  : "Demo Staff"
-                : `Role: ${activeFacility.role}`}
-            </span>
-            <ButtonLink href={defaultWorkspaceHref} variant="primary" size="sm">
-              Open Workspace
-              <Icon name="arrow" size="sm" />
-            </ButtonLink>
-          </>
-        ) : (
-          <ButtonLink href="/demo" variant="onDark" size="sm">
-            <Icon name="shield" size="sm" />
-            Judge Demo Access
-          </ButtonLink>
-        )}
       </div>
     </header>
   );

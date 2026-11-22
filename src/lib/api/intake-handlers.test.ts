@@ -48,10 +48,10 @@ const SAMPLE_BRIEF: ClinicalIntakeBrief = {
 };
 
 const VERIFIED_NURSE_TOKEN: VerifiedStaffToken = {
-  uid: "demo-staff-01",
-  email: "demo.staff@medflow.synthetic",
+  uid: "staff-nurse-01",
+  email: "nurse.demo@medflow.synthetic",
   emailVerified: true,
-  displayName: "Demo Clinical Staff",
+  displayName: "Nurse Demo",
   authTime: 1_763_812_000,
   expiresAt: 1_763_815_600,
   projectId: "daring-brace-jw1xt",
@@ -70,9 +70,9 @@ const verifyNurseToken: VerifyTokenFn = async (header) => {
 
 const NURSE_AUTH_RECORD: StaffAuthorizationRecord = {
   profile: {
-    uid: "demo-staff-01",
-    email: "demo.staff@medflow.synthetic",
-    displayName: "Demo Clinical Staff",
+    uid: "staff-nurse-01",
+    email: "nurse.demo@medflow.synthetic",
+    displayName: "Nurse Demo",
     active: true,
   },
   memberships: [
@@ -88,9 +88,9 @@ const NURSE_AUTH_RECORD: StaffAuthorizationRecord = {
 
 const ADMIN_AUTH_RECORD: StaffAuthorizationRecord = {
   profile: {
-    uid: "demo-admin-01",
-    email: "demo.admin@medflow.synthetic",
-    displayName: "Demo Administrator",
+    uid: "staff-admin-01",
+    email: "admin.demo@medflow.synthetic",
+    displayName: "Admin Demo",
     active: true,
   },
   memberships: [
