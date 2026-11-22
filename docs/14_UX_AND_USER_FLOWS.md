@@ -612,3 +612,10 @@ The HTML is a design reference, not the production app. It must use synthetic sa
 - Staff-reviewed corrections require a separate persisted version; do not overwrite the original `aiBrief`.
 - Final type, colour, icon and spacing tokens will be set in the standalone HTML design system. This document defines behaviour and information hierarchy, not final visual styling.
 - Product name remains a codename until clearance.
+
+
+## 15. Founder-approved visual-system update (2026-11-22)
+
+The founder-supplied design reference at `design-system/medflow-design-system.html` replaces the previous visual system. Follow `docs/18_DESIGN_SYSTEM_SPEC.md` for palette, IBM Plex typography, component language, layout, source-provenance treatments and responsive/accessibility implementation.
+
+This UX document remains authoritative for user-facing behaviour, routes, states, permissions and copy. The HTML's patient/staff interactions are design demonstrations only. Its adult TEWS/SATS scoring, clinical colour classifications, vital-sign workflow, clinical time targets and AI red-flag prioritisation are explicitly excluded from the MVP. Continue to use the existing staff-assigned operational workflow priorities and statuses; do not reinterpret them as clinical triage classes.
