@@ -539,3 +539,34 @@ These issues must be resolved during technical and design planning without block
 | Build sequence | `11_IMPLEMENTATION_RUNBOOK.md` |
 | Repository/readme/judges | `12_REPOSITORY_AND_JUDGE_READINESS.md` |
 | Screen behaviour and interaction states | `14_UX_AND_USER_FLOWS.md` |
+
+
+---
+
+## 15. Founder-approved product amendment — Evidence Integrity Engine (2026-11-22)
+
+The product's core differentiator is strengthened from source-quoted AI extraction to **deterministic evidence provenance checks**.
+
+### 15.1 Product requirement
+
+MedFlow must not merely display an AI-generated summary. For each evidence-bearing extracted item, the application must show the source quotation and the result of a deterministic check against the immutable patient-confirmed narrative. The check is performed by trusted server code after Gemini output passes strict schema validation.
+
+### 15.2 Required behaviour
+
+- The server, not Gemini, determines whether a quote is present, absent, unmatched or ambiguous.
+- Exact unique matches receive server-derived source spans.
+- Missing, unmatched and ambiguous evidence remains visibly unresolved for staff review.
+- Provenance is bound to the exact narrative and validated draft using server-generated hashes and an HMAC-SHA-256 signature.
+- Staff must review the original narrative and AI draft and may confirm or correct the draft. The original narrative and original AI output remain preserved.
+- No aggregate confidence score or single trust score is displayed.
+
+### 15.3 Explicit limitation
+
+The engine verifies quote location and provenance mechanics only. It does not establish that a quotation semantically supports the AI's interpretation, that the patient's statement is true, or that any clinical conclusion is accurate. It is not a clinical decision-support score.
+
+### 15.4 Milestone allocation
+
+- Milestone 2: patient typed/voice intake, durable persistence and staff-triggered server-side Gemini extraction.
+- Milestone 3: deterministic Evidence Integrity Engine, provenance signing/verification and staff evidence-review UI.
+
+The full specification and algorithm acceptance tests are in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md` and `docs/10_TESTING_AND_DEMO_PLAN.md`.
