@@ -17,8 +17,8 @@ Before proposing code changes, inspect the full repository and read every Markdo
 - `docs/05_VOICE_INTAKE_SPEC.md`, `docs/06_AI_EXTRACTION_SPEC.md` and `docs/07_CLINICAL_SAFETY_AND_PRIVACY.md`
 - `docs/08_TECHNICAL_ARCHITECTURE.md` and `docs/09_DATA_MODEL_AND_API_CONTRACTS.md`
 - `docs/10_TESTING_AND_DEMO_PLAN.md`, `docs/11_IMPLEMENTATION_RUNBOOK.md` and `docs/12_REPOSITORY_AND_JUDGE_READINESS.md`
-- `docs/13_PRODUCT_REQUIREMENTS.md`, `docs/14_UX_AND_USER_FLOWS.md`, `docs/15_DECISIONS_AND_RISKS.md`, `docs/16_SOURCES_AND_ATTRIBUTIONS.md`, `docs/17_SPRINT_LOG_AND_AI_DISCLOSURE.md` and `docs/18_DESIGN_SYSTEM_SPEC.md`
-- The complete `design-system/` directory, especially `medflow-design-system.html`, `design-tokens.css` and its README.
+- `docs/13_PRODUCT_REQUIREMENTS.md`, `docs/14_UX_AND_USER_FLOWS.md`, `docs/15_DECISIONS_AND_RISKS.md`, `docs/16_SOURCES_AND_ATTRIBUTIONS.md` and `docs/17_SPRINT_LOG_AND_AI_DISCLOSURE.md`
+- The one standalone HTML design-system file attached directly to this conversation. There is no separate design-system directory or token file to inspect.
 
 Do not rely only on this prompt or the README. Do not claim to have read any file you did not actually inspect. If a file is unavailable or cannot be parsed, identify it.
 
