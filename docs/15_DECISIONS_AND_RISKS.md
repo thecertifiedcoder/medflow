@@ -101,3 +101,12 @@ Founder approval is required for proposed decisions before they become locked pr
 | D-016 | Adopt Option 2B for initial facility and staff bootstrap: do not add an email-specific bootstrap exception to `firestore.rules`; keep `/facilities` and `/staff` non-writable by ordinary clients and provision the synthetic demo facility and initial administrator profile manually in the Firebase Console. | Approved by founder | Eliminates client-side privilege escalation paths; authentication alone grants zero clinical access. |
 
 
+
+
+## 9. Founder decisions — new design system and algorithm direction (confirmed 2026-11-22)
+
+| ID | Decision | Status | Consequence |
+|---|---|---|---|
+| D-017 | Replace the previous MedFlow visual system with the founder-supplied `medflow-design-system (1).html`. The uploaded reference is stored as `design-system/medflow-design-system.html`; reusable CSS sections 1–4 are extracted to `design-system/design-tokens.css`. | Approved by founder | New HTML/CSS is the sole visual source of truth. Existing React components must be migrated; do not keep the previous palette or typography active. Product behaviour and clinical safety documents continue to govern functionality. |
+| D-018 | Adopt the deterministic **Evidence Integrity Engine** as MedFlow's algorithmic differentiator. It checks exact source-quote matches, derives source spans, records field-level evidence states and binds the validated draft to the immutable narrative through server-generated provenance. | Approved by founder; implementation pending | The engine proves source-location/provenance mechanics only, not clinical truth or semantic correctness. No aggregate trust score. Implement after patient intake and Gemini extraction are working. |
+| D-019 | Do not implement the adult TEWS/SATS scoring function, clinical classifications, clinical time targets, vital-sign scoring, autonomous triage or AI red-flag prioritisation shown in the supplied HTML as active MVP functionality. | Approved by founder | Those elements remain reference-only and deferred pending a separate clinical governance decision, authoritative protocol review and local validation plan. Staff-assigned workflow labels remain operational queue organisation only. |
