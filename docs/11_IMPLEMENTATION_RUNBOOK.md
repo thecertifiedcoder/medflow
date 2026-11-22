@@ -13,7 +13,7 @@ Internal target: demoable, end-to-end MVP by Sunday evening, November 22. This i
 ### Before sprint / planning only
 - Confirm team registration before Sunday noon.
 - Freeze P0 scope.
-- Finalise design-system specification and project docs.
+- Finalise project docs and prepare the single standalone HTML design-system attachment.
 - Create/confirm Firebase and Google AI Studio project access.
 - Confirm public GitHub repository ownership and access.
 - Prepare synthetic narratives and test checklist.
@@ -23,7 +23,7 @@ Internal target: demoable, end-to-end MVP by Sunday evening, November 22. This i
 
 **Milestone A: app skeleton and design system**
 - Create the application in Google AI Studio Build Mode.
-- Apply approved HTML design-system reference and tokens.
+- Rebuild the application UI to match the single attached HTML design-system reference; do not create separate design tokens.
 - Establish client/server separation and environment secrets.
 - Connect Firebase Authentication and Firestore.
 - Create facility-scoped data model and security rules.
