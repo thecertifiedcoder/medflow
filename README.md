@@ -11,7 +11,7 @@
 1. Read [`docs/00_START_HERE.md`](docs/00_START_HERE.md) for the project definition, document precedence and current milestone state.
 2. Read [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) before asking Google AI Studio to implement an approved milestone.
 3. Read [`AGENTS.md`](AGENTS.md) for repository-wide rules for AI coding agents and contributors.
-4. Review [`design-system/`](design-system/) and [`docs/18_DESIGN_SYSTEM_SPEC.md`](docs/18_DESIGN_SYSTEM_SPEC.md) for the founder-approved visual system.
+4. Attach the founder-provided standalone HTML design-system file directly to the Google AI Studio conversation. It is the sole visual source of truth; no separate token file or design-system specification is used.
 5. Read [`docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`](docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md) for the approved algorithm direction.
 
 ## Product thesis
@@ -25,7 +25,6 @@ The differentiator is not voice capture or a queue by itself. It is the traceabl
 ## Repository map
 
 - [`docs/`](docs/) — hackathon brief, product strategy, requirements, UX, safety, architecture, data contracts, tests, implementation runbook, decisions and references.
-- [`design-system/`](design-system/) — founder-approved standalone HTML design reference and extracted reusable product CSS.
 - [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) — implementation handoff prompt for Google AI Studio.
 - [`AGENTS.md`](AGENTS.md) — durable rules for AI agents.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution and documentation conventions.
@@ -40,7 +39,7 @@ Milestone 1B connected the Google AI Studio Starter Tier Firebase project, deplo
 Still outstanding:
 - Manual creation of the synthetic demo facility and first staff profile in Firebase Console.
 - Interactive Google Sign-In and authorized staff queue verification with those records.
-- Milestone 1C migration of the running app to the new visual system.
+- Milestone 1C migration of the running React UI to match the attached HTML design system.
 - Milestone 2 patient typed/voice intake, transcription and staff-triggered Gemini extraction.
 - Milestone 3 Evidence Integrity Engine implementation and verification.
 
@@ -50,7 +49,7 @@ No feature should be described as implemented until it exists in the running app
 
 - **Framework:** Next.js App Router
 - **Language:** TypeScript
-- **UI:** React using the founder-approved HTML/CSS design system rebuilt as accessible components
+- **UI:** React components rebuilt to match the single founder-provided HTML design-system attachment
 - **Backend:** Next.js Route Handlers
 - **Authentication:** Firebase Authentication (Google Sign-In)
 - **Database/realtime:** Cloud Firestore on Google AI Studio Starter Tier, using the explicitly provisioned database ID and hardened Firestore Security Rules
@@ -62,7 +61,7 @@ No feature should be described as implemented until it exists in the running app
 
 ## Design and algorithm boundaries
 
-The founder-supplied design system replaces the previous palette, typography and component styling. The reference contains illustrative adult TEWS/SATS scoring UI and code, but those clinical scoring features are explicitly excluded from the MVP. The approved algorithm direction is the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. It checks exact source quotations and provenance; it does not diagnose or determine urgency.
+The single HTML file attached directly to the Google AI Studio conversation replaces the previous visual system and is the only design reference. Do not create a separate token file or design-system specification. Ignore the HTML's demo JavaScript and do not implement its adult TEWS/SATS scoring UI or other autonomous clinical scoring. The approved algorithm direction is the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`; it checks exact source quotations and provenance, not clinical truth or urgency.
 
 ## Google AI Studio
 
