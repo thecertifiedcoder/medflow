@@ -10,7 +10,7 @@
 | ID | Decision / constraint | Status | Rationale |
 |---|---|---|---|
 | D-001 | Build for TCC Hackathon 2026 first, while keeping a credible commercial product path. | Approved by founder | User explicitly confirmed commercial intent while prioritising the hackathon. |
-| D-002 | Use documentation-first delivery: complete Markdown context, HTML design system, then one master Google AI Studio handoff prompt. | Approved by founder | Prevents fragmented context and makes implementation reproducible. |
+| D-002 | Use documentation-first delivery: complete Markdown context, one standalone HTML design-system attachment, then one master Google AI Studio handoff prompt. | Approved by founder | Prevents fragmented context and makes implementation reproducible. |
 | D-003 | Public GitHub repository and judge-facing documentation are first-class requirements. | Approved by founder | Judges may inspect source code; repository quality contributes to credibility and judging. |
 | D-004 | All demo patients and clinical examples must be synthetic. | Proposed safety requirement | Avoids exposing real patient information in a public hackathon prototype. |
 | D-005 | AI is an intake-structuring assistant, not a diagnosing or autonomous clinical decision-maker. | Proposed product boundary | Reduces clinical risk and keeps human clinical authority explicit. |
@@ -103,10 +103,9 @@ Founder approval is required for proposed decisions before they become locked pr
 
 
 
-## 9. Founder decisions — new design system and algorithm direction (confirmed 2026-11-22)
+## 9. Founder-approved algorithm decisions (confirmed 2026-11-22)
 
 | ID | Decision | Status | Consequence |
 |---|---|---|---|
-| D-017 | Replace the previous MedFlow visual system with the founder-supplied `medflow-design-system (1).html`. The uploaded reference is stored as `design-system/medflow-design-system.html`; reusable CSS sections 1–4 are extracted to `design-system/design-tokens.css`. | Approved by founder | New HTML/CSS is the sole visual source of truth. Existing React components must be migrated; do not keep the previous palette or typography active. Product behaviour and clinical safety documents continue to govern functionality. |
 | D-018 | Adopt the deterministic **Evidence Integrity Engine** as MedFlow's algorithmic differentiator. It checks exact source-quote matches, derives source spans, records field-level evidence states and binds the validated draft to the immutable narrative through server-generated provenance. | Approved by founder; implementation pending | The engine proves source-location/provenance mechanics only, not clinical truth or semantic correctness. No aggregate trust score. Implement after patient intake and Gemini extraction are working. |
 | D-019 | Do not implement the adult TEWS/SATS scoring function, clinical classifications, clinical time targets, vital-sign scoring, autonomous triage or AI red-flag prioritisation shown in the supplied HTML as active MVP functionality. | Approved by founder | Those elements remain reference-only and deferred pending a separate clinical governance decision, authoritative protocol review and local validation plan. Staff-assigned workflow labels remain operational queue organisation only. |
