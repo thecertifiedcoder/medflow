@@ -126,3 +126,21 @@ MedFlow is ready for judging when:
 - AI failure does not lose or hide the patient submission;
 - public code and README let a reviewer understand and run the application;
 - demo video satisfies the exact time and public-link rules.
+
+
+## 11. Founder-approved algorithmic differentiator — Evidence Integrity Engine (2026-11-22)
+
+The technical differentiator is now explicitly the **Evidence Integrity Engine**, not a clinical scoring algorithm.
+
+It adds a deterministic verification layer to AI extraction:
+
+1. Gemini proposes structured claims and source quotations.
+2. Strict server-side schema validation rejects malformed or forbidden output.
+3. The server searches the exact patient-confirmed narrative and derives source spans for unique exact matches.
+4. Missing, unmatched and ambiguous quotations receive explicit field-level states.
+5. A server-generated provenance envelope binds the draft and evidence metadata to the exact narrative hash.
+6. Staff inspect the source and remain responsible for confirmation or correction.
+
+The judge-facing demonstration should show at least one exact quote match and one deliberately unsupported or ambiguous quote, then show that the original narrative remains unchanged. Explain that the algorithm verifies source location and provenance, not clinical truth or semantic correctness.
+
+Do not add TEWS/SATS, predictive risk, diagnosis, urgency scoring, clinical time targets or autonomous queue prioritisation to chase technical novelty. These features are excluded by D-019 and the clinical safety specification.
