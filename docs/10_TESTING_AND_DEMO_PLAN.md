@@ -138,3 +138,23 @@ The following tests are mandatory before the MVP is described as complete:
 | UX-18 | UI is used at narrow mobile width | Patient flow has no horizontal scroll and primary actions remain reachable. |
 | UX-19 | UI is used at tablet/desktop width | Staff queue and detail view remain readable and operable. |
 | UX-20 | Reduced-motion preference is enabled | Non-essential animation is reduced or removed. |
+
+
+## 7. Evidence Integrity Engine tests (Milestone 3)
+
+These tests are required before the algorithm is described as implemented:
+
+- [ ] Unique exact quotation produces `exact_quote_match` and correct UTF-16 half-open source offsets.
+- [ ] Missing quotation produces `missing_quote`.
+- [ ] Quotation absent from the narrative produces `quote_not_found`.
+- [ ] Repeated quotation produces `ambiguous_quote`; no occurrence is guessed.
+- [ ] Unicode before the quotation does not corrupt source offsets.
+- [ ] Punctuation/spelling variation is not silently accepted through fuzzy matching.
+- [ ] Gemini cannot supply trusted evidence status, source offsets, hashes or HMAC signatures.
+- [ ] Narrative hash mismatch invalidates provenance.
+- [ ] Draft or metadata modification invalidates HMAC verification.
+- [ ] Free-text AI summary remains labelled as a draft and is not falsely described as mechanically verified.
+- [ ] Unsupported/ambiguous claims remain visible for staff review and do not disappear or change queue priority.
+- [ ] No TEWS/SATS score, clinical classification, treatment-time target or autonomous urgency behaviour is present.
+
+The engine's checks establish quote location and provenance only. They are not clinical validation or proof that an extracted interpretation is correct.
