@@ -93,3 +93,16 @@ Do not deploy the hackathon demo until:
 - no secret is bundled into the browser;
 - no raw audio or narrative content is written to logs;
 - unauthorised cross-facility and cross-patient reads are tested.
+
+
+## 12. Evidence Integrity Engine and scoring exclusion (2026-11-22)
+
+The approved Evidence Integrity Engine checks whether extracted quotations can be located in the exact patient-confirmed narrative and records source spans and provenance. This is a data-integrity/provenance check, not a clinical validation mechanism.
+
+- An exact quotation match does not prove that the AI interpretation is semantically supported, that the patient's statement is true, or that a clinical conclusion is accurate.
+- Do not label an extracted item “clinically verified”, “true”, “safe” or “accurate” solely because its quote matched.
+- Staff review remains mandatory; the original narrative and original AI draft remain preserved.
+- Do not display a single trust/confidence score that could be mistaken for clinical certainty.
+- The adult TEWS/SATS scoring UI and code embedded in the new design reference are excluded from MVP functionality. No clinical classes, vital-sign scores, time targets or autonomous urgency logic may be activated.
+
+See `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md` and decisions D-018/D-019.
