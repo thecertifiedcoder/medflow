@@ -2,62 +2,75 @@
 
 **Working concept:** Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow.
 
-**Competition:** TCC Hackathon 2026 · **Repository status:** Documentation and design-system baseline; application implementation has not yet been added.
+**Competition:** TCC Hackathon 2026 · **Current status:** Milestone 1A and 1B application foundation, Firebase integration, Firestore rules and staff authorization are implemented and verified in AI Studio Preview. Manual facility/staff seeding and interactive Google Sign-In verification remain outstanding. Patient intake, voice transcription and Gemini extraction are not yet implemented.
 
-> **Safety notice:** This is a hackathon prototype concept, not a clinically validated medical device or emergency service. Do not use it for real patient care or enter real patient information or audio. Demonstrations must use synthetic data. MedFlow must not diagnose, prescribe, autonomously assign clinical urgency, or tell a patient that it is safe to wait.
+> **Safety notice:** This is a hackathon prototype, not a clinically validated medical device or emergency service. Do not use it for real patient care or enter real patient information or audio. Demonstrations must use synthetic data. MedFlow must not diagnose, prescribe, autonomously assign clinical urgency, or tell a patient that it is safe to wait.
 
 ## Start here
 
-1. Read [`docs/00_START_HERE.md`](docs/00_START_HERE.md) for the project definition, document precedence and complete reading order.
-2. Read [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) before asking Google AI Studio to implement the application.
+1. Read [`docs/00_START_HERE.md`](docs/00_START_HERE.md) for the project definition, document precedence and current milestone state.
+2. Read [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) before asking Google AI Studio to implement an approved milestone.
 3. Read [`AGENTS.md`](AGENTS.md) for repository-wide rules for AI coding agents and contributors.
-4. Review the [`design-system/`](design-system/) directory and [`docs/18_DESIGN_SYSTEM_SPEC.md`](docs/18_DESIGN_SYSTEM_SPEC.md) before implementing UI.
+4. Review [`design-system/`](design-system/) and [`docs/18_DESIGN_SYSTEM_SPEC.md`](docs/18_DESIGN_SYSTEM_SPEC.md) for the founder-approved visual system.
+5. Read [`docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`](docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md) for the approved algorithm direction.
 
 ## Product thesis
 
-MedFlow turns a patient's spoken or typed account into an editable transcript and an evidence-linked clinical intake brief. Clinical staff review the original narrative and extracted context, correct it where necessary, and independently assign workflow priority and status. The original patient account remains accessible, uncertainty and missing information remain visible, and meaningful staff actions are auditable.
+MedFlow turns a patient's spoken or typed account into an editable transcript and an evidence-linked clinical intake brief. A deterministic Evidence Integrity Engine checks whether extracted claims can be traced to exact quotations in the original patient-confirmed narrative. Clinical staff review the original narrative and extracted context, correct it where necessary, and independently assign workflow priority/status.
 
-**Core loop:** Patient speaks or types → transcript is reviewed and confirmed → intake is saved → AI extracts structured context with source evidence → staff reviews/corrects → staff assigns workflow priority/status → actions are audited.
+**Core loop:** Patient speaks or types → transcript is reviewed and confirmed → intake is saved → staff triggers server-side AI extraction → deterministic source-evidence checks run → staff reviews/corrects → staff assigns workflow priority/status → actions are audited.
 
-The intended differentiator is not voice capture or a queue by itself. It is the traceable connection between what a patient actually said and the structured information presented to the clinical team.
+The differentiator is not voice capture or a queue by itself. It is the traceable connection between what a patient actually said and the structured information presented to the clinical team. Evidence checks establish source-location integrity only; they do not prove clinical truth or correctness.
 
 ## Repository map
 
 - [`docs/`](docs/) — hackathon brief, product strategy, requirements, UX, safety, architecture, data contracts, tests, implementation runbook, decisions and references.
-- [`design-system/`](design-system/) — standalone HTML design-system reference, companion CSS tokens and visual previews.
-- [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) — the implementation handoff prompt for Google AI Studio.
+- [`design-system/`](design-system/) — founder-approved standalone HTML design reference and extracted reusable product CSS.
+- [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) — implementation handoff prompt for Google AI Studio.
 - [`AGENTS.md`](AGENTS.md) — durable rules for AI agents.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution and documentation conventions.
 - [`SECURITY.md`](SECURITY.md) — prototype security and privacy policy.
 
-## Current repository contents and status
+## Current implementation status
 
-This repository intentionally begins with specifications and the visual system. It is **not yet the running MedFlow application**. The HTML design-system page is an interactive local reference only; its recording, transcription, login, queue, review, priority and audit demonstrations are simulations and do not connect to microphone hardware, Gemini, Firebase or a backend.
+Milestone 1A established the Next.js App Router application, design primitives, strict schemas, environment boundaries and verified Preview build.
 
-No feature should be described as implemented until it exists in the running application and passes its acceptance tests. Use the status labels defined in `docs/00_START_HERE.md`.
+Milestone 1B connected the Google AI Studio Starter Tier Firebase project, deployed hardened Firestore rules, implemented Google Sign-In UI and server-side Firebase ID token signature/claim verification, and added staff authorization gates. Preview verification included typecheck, lint, production build, unit/security tests, HTTP checks and unauthenticated Firestore negative probes. Manual creation of the synthetic facility and first staff profile plus interactive Google Sign-In verification remain outstanding.
+
+Still outstanding:
+- Manual creation of the synthetic demo facility and first staff profile in Firebase Console.
+- Interactive Google Sign-In and authorized staff queue verification with those records.
+- Milestone 1C migration of the running app to the new visual system.
+- Milestone 2 patient typed/voice intake, transcription and staff-triggered Gemini extraction.
+- Milestone 3 Evidence Integrity Engine implementation and verification.
+
+No feature should be described as implemented until it exists in the running application and passes its acceptance tests.
 
 ## Approved application stack
 
 - **Framework:** Next.js App Router
 - **Language:** TypeScript
-- **UI:** React with the approved HTML/CSS design system rebuilt as accessible components
+- **UI:** React using the founder-approved HTML/CSS design system rebuilt as accessible components
 - **Backend:** Next.js Route Handlers
-- **Authentication:** Firebase Authentication
-- **Database/realtime:** Cloud Firestore
-- **AI:** Server-side Google Gemini API
+- **Authentication:** Firebase Authentication (Google Sign-In)
+- **Database/realtime:** Cloud Firestore on Google AI Studio Starter Tier, using the explicitly provisioned database ID and hardened Firestore Security Rules
+- **Server identity verification:** Firebase Admin Auth `verifyIdToken(token)` with revocation check disabled, because Starter Tier IAM does not permit the required revocation lookup
+- **AI:** Server-side Google Gemini API; live model calls are pending API key configuration and smoke tests
 - **Deployment target:** A verified Node.js host, with Google Cloud Run as the current candidate
 
-Next.js is a fixed project requirement. Google AI Studio Build compatibility with this exact stack must be proven before implementation. If Build Mode cannot run Next.js, use it only as a coding/design assistant while preserving a genuine Next.js codebase and deploying through a compatible environment. Do not silently replace Next.js with Vite or plain React. See [`docs/08_TECHNICAL_ARCHITECTURE.md`](docs/08_TECHNICAL_ARCHITECTURE.md).
+**Starter Tier constraint:** Do not use Firebase Admin Firestore reads/writes, service-account JSON keys or IAM workarounds. Patient intake writes and staff-authorised operations must follow the verified Firestore Web SDK + hardened Security Rules architecture documented in `docs/08_TECHNICAL_ARCHITECTURE.md`.
+
+## Design and algorithm boundaries
+
+The founder-supplied design system replaces the previous palette, typography and component styling. The reference contains illustrative adult TEWS/SATS scoring UI and code, but those clinical scoring features are explicitly excluded from the MVP. The approved algorithm direction is the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. It checks exact source quotations and provenance; it does not diagnose or determine urgency.
 
 ## Google AI Studio
 
-Google AI Studio Build mode supports importing an existing repository from the Add files (+) menu and supports GitHub sync. This repository is private; the GitHub account used by AI Studio must be authorised and the Google AI Studio GitHub App must be granted access to this repository. If it does not appear in the import picker, check the app's repository permissions rather than making the repository public by default.
-
-Start a **new Build Mode session**, select **Next.js** in Settings, then use Add files (+) → Import from GitHub to import `thecertifiedcoder/medflow` on `main`. Follow the session setup steps in `docs/11_IMPLEMENTATION_RUNBOOK.md`. After importing, provide the full `AI_STUDIO_MASTER_PROMPT.md` to the Build agent. It must inspect the documentation pack and return an implementation-readiness report before any code is written. Next.js support is confirmed in Google's March 18, 2026 announcement: https://blog.google/innovation-and-ai/technology/developers-tools/full-stack-vibe-coding-google-ai-studio/.
+Use the private GitHub repository `thecertifiedcoder/medflow` and keep GitHub App access scoped to the repository. Follow `docs/11_IMPLEMENTATION_RUNBOOK.md` for the current Build session and milestone instructions. Do not make the repository public merely to import it.
 
 ## Hackathon constraints
 
-The hackathon rules and scoring requirements are documented in [`docs/01_HACKATHON_RULES_AND_SCORECARD.md`](docs/01_HACKATHON_RULES_AND_SCORECARD.md). Planning and product documentation may predate the official sprint, while submitted implementation work must comply with the event rules. Keep a contemporaneous sprint log and disclose AI assistance.
+The hackathon rules and scoring requirements are documented in [`docs/01_HACKATHON_RULES_AND_SCORECARD.md`](docs/01_HACKATHON_RULES_AND_SCORECARD.md). Keep a contemporaneous sprint log and disclose AI assistance. Do not fabricate metrics, clinical validation, partners or user outcomes.
 
 ## Commercialisation boundary
 
