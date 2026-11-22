@@ -140,3 +140,20 @@ Audit events are append-only from the application perspective. Do not expose a U
 ## 5. MVP release gate
 
 Do not start P1 until all P0 features work together in a single end-to-end test. The release gate is the test flow in `10_TESTING_AND_DEMO_PLAN.md`.
+
+
+## 6. Founder-approved Evidence Integrity Engine addition (2026-11-22)
+
+The MVP's evidence-linked extraction requirement is strengthened by the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`. The engine is implemented after the Milestone 2 intake/Gemini workflow is working; it is not a substitute for the original intake or staff review.
+
+Additional acceptance criteria for the evidence-integrity milestone:
+
+- [ ] Every evidence-bearing extracted field has a server-generated evidence state.
+- [ ] A unique exact source quotation receives a server-derived UTF-16 source span.
+- [ ] Missing, unmatched and repeated quotations are labelled `missing_quote`, `quote_not_found` or `ambiguous_quote`.
+- [ ] The engine does not use fuzzy matching or trust model-supplied offsets/statuses.
+- [ ] A provenance envelope binds the validated draft and evidence metadata to the immutable confirmed narrative using server-side hashes and HMAC-SHA-256.
+- [ ] Staff can inspect source quotations and decide whether to confirm or correct the AI draft.
+- [ ] The engine never creates a diagnosis, clinical score, urgency classification, treatment recommendation or workflow priority.
+
+An exact quotation match proves only that the words can be located in the source narrative. It does not prove clinical truth or semantic correctness. See D-018 and `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
