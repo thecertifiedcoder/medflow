@@ -31,10 +31,6 @@ medflow/
     15_DECISIONS_AND_RISKS.md
     16_SOURCES_AND_ATTRIBUTIONS.md
     17_SPRINT_LOG_AND_AI_DISCLOSURE.md
-  design-system/
-    medflow-design-system.html
-    design-tokens.css
-    README.md
   src/ or generated app structure
   server/ (if generated separately)
   tests/
