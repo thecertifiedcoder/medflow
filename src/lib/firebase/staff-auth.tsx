@@ -197,6 +197,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
   const handleSessionExpired = useCallback((message?: string) => {
     verificationRunIdRef.current += 1;
     verifyingUidRef.current = null;
+    authModeRef.current = null;
+    statusRef.current = "unauthenticated";
     setAuthMode(null);
     setDemoPersona(null);
     setServerSession(null);
@@ -234,6 +236,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           !demoStatus.configured ||
           !demoStatus.hasActiveDemoSession
         ) {
+          authModeRef.current = null;
+          statusRef.current = "unauthenticated";
           setAuthMode(null);
           setDemoPersona(null);
           setServerSession(null);
@@ -256,6 +260,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           session.authorizationStatus === "authorized"
         ) {
           preferredFacilityIdRef.current = session.activeFacility.facilityId;
+          authModeRef.current = "demo";
+          statusRef.current = "authorized";
           setAuthMode("demo");
           setDemoPersona(session.demoPersona);
           setServerSession(session);
@@ -605,7 +611,11 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           authAttemptInFlightRef.current = false;
           setRawUser(null);
           setIsSigningIn(false);
-          if (!redirectErrored && statusRef.current !== "error") {
+          if (
+            !redirectErrored &&
+            statusRef.current !== "error" &&
+            !(authModeRef.current === "demo" && statusRef.current === "authorized")
+          ) {
             void checkDemoCookieSession();
           }
           return;
@@ -692,13 +702,55 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
           return { ok: false, message: msg };
         }
 
+        // Confirm the browser actually retained and sent the HttpOnly cookie
+        // back to /api/staff/session before navigating to a protected route.
+        let verifiedCookieSession: PostgresStaffSessionResponse;
+        try {
+          verifiedCookieSession = await fetchStaffSession({
+            getIdToken: async () => null,
+            allowCookieFallback: true,
+          });
+        } catch (cookieErr) {
+          const embedded = isEmbeddedInIframe();
+          const msg =
+            cookieErr instanceof StaffApiClientError && cookieErr.status === 401
+              ? embedded
+                ? "Your browser did not retain the HTTP-only demo session cookie inside the embedded preview frame. Allow partitioned/third-party cookies for this preview or open MedFlow in a standalone browser tab."
+                : "Your browser did not retain the HTTP-only demo session cookie. Ensure cookies are enabled for this site and try again."
+              : cookieErr instanceof StaffApiClientError
+                ? cookieErr.message
+                : "Unable to verify the demo session cookie with the server.";
+          setAuthMode(null);
+          setDemoPersona(null);
+          setServerSession(null);
+          setStaffProfile(null);
+          setActiveFacility(null);
+          authModeRef.current = null;
+          statusRef.current = "unauthenticated";
+          setStatus("unauthenticated");
+          setErrorMessage(msg);
+          return { ok: false, message: msg };
+        }
+
+        if (
+          verifiedCookieSession.authMode !== "demo" ||
+          verifiedCookieSession.authorizationStatus !== "authorized"
+        ) {
+          const msg = "Demo session cookie could not be verified on the server.";
+          setErrorMessage(msg);
+          return { ok: false, message: msg };
+        }
+
         verificationRunIdRef.current += 1;
-        preferredFacilityIdRef.current = session.activeFacility.facilityId;
+        preferredFacilityIdRef.current =
+          verifiedCookieSession.activeFacility.facilityId;
+        authModeRef.current = "demo";
+        statusRef.current = "authorized";
         setAuthMode("demo");
-        setDemoPersona(session.demoPersona);
-        setServerSession(session);
-        setStaffProfile(session.staffProfile);
-        setActiveFacility(session.activeFacility);
+        setDemoPersona(verifiedCookieSession.demoPersona);
+        setServerSession(verifiedCookieSession);
+        setStaffProfile(verifiedCookieSession.staffProfile);
+        setActiveFacility(verifiedCookieSession.activeFacility);
         setStatus("authorized");
         return { ok: true };
       } catch (err) {
@@ -906,6 +958,8 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       if (auth.currentUser) {
         await signOut(auth);
       }
+      authModeRef.current = null;
+      statusRef.current = "unauthenticated";
       setRawUser(null);
       setAuthMode(null);
       setDemoPersona(null);

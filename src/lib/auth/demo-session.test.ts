@@ -864,7 +864,7 @@ test("Firebase Authentication remains fully functional and rejects reserved synt
   );
 });
 
-test("Cookie security helper sets Secure; SameSite=None; Partitioned in HTTPS/production and SameSite=Lax on local HTTP", () => {
+test("Cookie security helper sets Secure; SameSite=None; Partitioned in HTTPS/production and AI Studio preview dev proxy, and SameSite=Lax on local HTTP", async () => {
   const prodCtx = resolveDemoCookieSecurityContext({
     url: "https://medflow.run.app/api/demo/session/admin",
     forwardedProto: "https",
@@ -880,10 +880,70 @@ test("Cookie security helper sets Secure; SameSite=None; Partitioned in HTTPS/pr
   const prodClear = buildDemoSessionClearCookieHeader(prodCtx);
   assert.match(prodClear, /Max-Age=0/);
   assert.match(prodClear, /Secure/);
+  assert.match(prodClear, /SameSite=None/);
+  assert.match(prodClear, /Partitioned/);
+
+  // Critical regression: AI Studio Preview runs `next dev` (NODE_ENV=development)
+  // behind a reverse proxy where internal URL is http://localhost:3000 and
+  // x-forwarded-proto may be absent or http, while Origin/Referer/Host are HTTPS.
+  const previewProxyCtx = resolveDemoCookieSecurityContext({
+    url: "http://localhost:3000/api/demo/session/admin",
+    forwardedProto: "http",
+    originHeader: "https://ais-dev-example.europe-west3.run.app",
+    hostHeader: "ais-dev-example.europe-west3.run.app",
+    nodeEnv: "development",
+  });
+  const previewSet = buildDemoSessionSetCookieHeader(
+    "tok-preview",
+    3600,
+    previewProxyCtx,
+  );
+  assert.match(previewSet, /HttpOnly/);
+  assert.match(previewSet, /Secure/);
+  assert.match(previewSet, /SameSite=None/);
+  assert.match(previewSet, /Partitioned/);
+
+  const previewClear = buildDemoSessionClearCookieHeader(previewProxyCtx);
+  assert.match(previewClear, /Secure/);
+  assert.match(previewClear, /SameSite=None/);
+  assert.match(previewClear, /Partitioned/);
+
+  // RFC 7239 Forwarded header proto=https detection under development mode
+  const rfcForwardedCtx = resolveDemoCookieSecurityContext({
+    url: "http://127.0.0.1:3000/api/demo/session/staff",
+    forwardedHeader: 'for=10.0.0.1;proto=https;host="preview.run.app"',
+    nodeEnv: "development",
+  });
+  assert.equal(rfcForwardedCtx.isHttpsRequest, true);
+
+  // Full handler test simulating AI Studio preview dev proxy (NODE_ENV=development, http internal URL)
+  const repo = createDemoTestRepository();
+  const previewLoginRes = await handleDemoSessionCreatePost(
+    "admin",
+    makeDemoPostInput({
+      url: "http://localhost:3000/api/demo/session/admin",
+      originHeader: "https://ais-dev-example.europe-west3.run.app",
+      hostHeader: "ais-dev-example.europe-west3.run.app",
+      forwardedHostHeader: null,
+      forwardedProtoHeader: null,
+    }),
+    {
+      repository: repo,
+      env: { ...ENABLED_DEMO_ENV, NODE_ENV: "development" },
+    },
+  );
+  assert.equal(previewLoginRes.status, 200);
+  const previewHandlerCookie = previewLoginRes.headers.get("set-cookie") ?? "";
+  assert.match(previewHandlerCookie, /HttpOnly/);
+  assert.match(previewHandlerCookie, /Secure/);
+  assert.match(previewHandlerCookie, /SameSite=None/);
+  assert.match(previewHandlerCookie, /Partitioned/);
 
   const localDevCtx = resolveDemoCookieSecurityContext({
     url: "http://localhost:3000/api/demo/session/admin",
     forwardedProto: "http",
+    originHeader: "http://localhost:3000",
+    hostHeader: "localhost:3000",
     nodeEnv: "development",
   });
   const localSet = buildDemoSessionSetCookieHeader("tok-123", 3600, localDevCtx);

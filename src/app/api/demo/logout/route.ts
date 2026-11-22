@@ -19,5 +19,6 @@ export async function POST(request: NextRequest) {
     hostHeader: request.headers.get("host"),
     forwardedHostHeader: request.headers.get("x-forwarded-host"),
     forwardedProtoHeader: request.headers.get("x-forwarded-proto"),
+    forwardedHeader: request.headers.get("forwarded"),
   });
 }

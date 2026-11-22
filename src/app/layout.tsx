@@ -40,6 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
     >
       <body className="flex min-h-screen flex-col bg-[var(--mf-canvas)] text-[var(--mf-text)]">

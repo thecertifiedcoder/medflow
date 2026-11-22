@@ -390,9 +390,34 @@ export interface DemoCookieSecurityContext {
   readonly isHttpsRequest: boolean;
 }
 
+function isLocalLoopbackHost(rawHost: string | null | undefined): boolean {
+  const normalized = normalizeHost(rawHost);
+  if (!normalized) return false;
+  return (
+    normalized === "localhost" ||
+    normalized.startsWith("localhost:") ||
+    normalized === "127.0.0.1" ||
+    normalized.startsWith("127.0.0.1:") ||
+    normalized === "[::1]" ||
+    normalized.startsWith("[::1]:") ||
+    normalized === "0.0.0.0" ||
+    normalized.startsWith("0.0.0.0:")
+  );
+}
+
+function hasHttpsForwardedHeader(rawForwarded: string | null | undefined): boolean {
+  if (!rawForwarded) return false;
+  return /\bproto\s*=\s*"?https"?\b/i.test(rawForwarded);
+}
+
 export function resolveDemoCookieSecurityContext(request: {
   readonly url?: string | null;
   readonly forwardedProto?: string | null;
+  readonly forwardedHeader?: string | null;
+  readonly originHeader?: string | null;
+  readonly refererHeader?: string | null;
+  readonly hostHeader?: string | null;
+  readonly forwardedHostHeader?: string | null;
   readonly nodeEnv?: string | undefined;
 }): DemoCookieSecurityContext {
   const isProduction = (request.nodeEnv ?? process.env.NODE_ENV) === "production";
@@ -400,8 +425,27 @@ export function resolveDemoCookieSecurityContext(request: {
     ?.split(",")[0]
     ?.trim()
     .toLowerCase();
-  const isHttpsUrl = Boolean(request.url?.trim().toLowerCase().startsWith("https://"));
-  const isHttpsRequest = forwardedProto === "https" || isHttpsUrl;
+  const isHttpsUrl = Boolean(
+    request.url?.trim().toLowerCase().startsWith("https://"),
+  );
+  const isHttpsOrigin = Boolean(
+    request.originHeader?.trim().toLowerCase().startsWith("https://"),
+  );
+  const isHttpsReferer = Boolean(
+    request.refererHeader?.trim().toLowerCase().startsWith("https://"),
+  );
+  const effectiveHost =
+    normalizeHost(request.forwardedHostHeader) ?? normalizeHost(request.hostHeader);
+  const isHostedRemoteOrigin =
+    Boolean(effectiveHost) && !isLocalLoopbackHost(effectiveHost);
+
+  const isHttpsRequest =
+    forwardedProto === "https" ||
+    hasHttpsForwardedHeader(request.forwardedHeader) ||
+    isHttpsUrl ||
+    isHttpsOrigin ||
+    isHttpsReferer ||
+    isHostedRemoteOrigin;
   return { isProduction, isHttpsRequest };
 }
 

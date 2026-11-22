@@ -76,7 +76,7 @@ async function parseErrorBody(response: Response): Promise<{
  * Executes an authenticated same-origin GET request using either:
  * - An active Firebase ID token (`Authorization: Bearer <token>`), retrying once
  *   with a forced Firebase token refresh on HTTP 401, OR
- * - A server-signed HTTP-only Hackathon Demo Mode session cookie (`credentials: "same-origin"`)
+ * - A server-signed HTTP-only Hackathon Demo Mode session cookie (`credentials: "include"`)
  *   when no Firebase token is active and `allowCookieFallback` is enabled.
  */
 async function authorizedGetJson(
@@ -98,7 +98,7 @@ async function authorizedGetJson(
 
     const cookieResponse = await doFetch(options.url, {
       method: "GET",
-      credentials: "same-origin",
+      credentials: "include",
       cache: "no-store",
       signal: options.signal,
     });
@@ -315,7 +315,7 @@ export async function fetchDemoStatus(
   const doFetch = options.fetchImpl ?? fetch;
   const response = await doFetch("/api/demo/status", {
     method: "GET",
-    credentials: "same-origin",
+    credentials: "include",
     cache: "no-store",
     signal: options.signal,
   });
@@ -357,7 +357,7 @@ export async function createDemoSession(
     headers: {
       [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
     },
-    credentials: "same-origin",
+    credentials: "include",
     cache: "no-store",
     signal: options.signal,
   });
@@ -396,7 +396,7 @@ export async function logoutDemoSession(
     headers: {
       [DEMO_CSRF_HEADER_NAME]: DEMO_CSRF_HEADER_VALUE,
     },
-    credentials: "same-origin",
+    credentials: "include",
     cache: "no-store",
     signal: options.signal,
   });

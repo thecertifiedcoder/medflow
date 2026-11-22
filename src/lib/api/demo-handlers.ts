@@ -50,6 +50,7 @@ export interface DemoPostRequestInput {
   readonly hostHeader: string | null;
   readonly forwardedHostHeader: string | null;
   readonly forwardedProtoHeader: string | null;
+  readonly forwardedHeader?: string | null;
   readonly rawBodyText: string;
 }
 
@@ -267,6 +268,11 @@ export async function handleDemoSessionCreatePost(
     const cookieContext = resolveDemoCookieSecurityContext({
       url: request.url,
       forwardedProto: request.forwardedProtoHeader,
+      forwardedHeader: request.forwardedHeader,
+      originHeader: request.originHeader,
+      refererHeader: request.refererHeader,
+      hostHeader: request.hostHeader,
+      forwardedHostHeader: request.forwardedHostHeader,
       nodeEnv: deps.env?.NODE_ENV,
     });
     const setCookieHeader = buildDemoSessionSetCookieHeader(
@@ -329,6 +335,11 @@ export async function handleDemoLogoutPost(
     const cookieContext = resolveDemoCookieSecurityContext({
       url: request.url,
       forwardedProto: request.forwardedProtoHeader,
+      forwardedHeader: request.forwardedHeader,
+      originHeader: request.originHeader,
+      refererHeader: request.refererHeader,
+      hostHeader: request.hostHeader,
+      forwardedHostHeader: request.forwardedHostHeader,
       nodeEnv: deps.env?.NODE_ENV,
     });
     const clearCookieHeader = buildDemoSessionClearCookieHeader(cookieContext);
