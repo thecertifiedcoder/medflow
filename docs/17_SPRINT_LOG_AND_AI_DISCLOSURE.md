@@ -13,11 +13,11 @@
 
 ## Work completed before official sprint
 
-List planning, research, documentation and design-system specification work completed before November 22. Do not describe these as sprint-built product features.
+List planning, research, documentation and review/preparation of the founder-provided HTML design reference completed before November 22. Do not describe these as sprint-built product features.
 
 - Product strategy and planning documents.
 - Research and requirements documents.
-- Design-system specification and reference assets, with actual creation date recorded.
+- Founder-provided standalone HTML design reference, with its actual creation/provision date recorded.
 
 ## AI tools disclosure
 
