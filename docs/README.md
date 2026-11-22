@@ -22,6 +22,4 @@ Begin with [`00_START_HERE.md`](00_START_HERE.md). It defines the mandatory read
 | `15_DECISIONS_AND_RISKS.md` | Decisions, open questions and tracked risks |
 | `16_SOURCES_AND_ATTRIBUTIONS.md` | Research references and attribution record |
 | `17_SPRINT_LOG_AND_AI_DISCLOSURE.md` | Sprint progress, contributions and AI disclosure |
-| `18_DESIGN_SYSTEM_SPEC.md` | Design system implementation guidance |
 | `PHASE_4_DELIVERABLES.md` | Earlier phase handoff record |
-| `PHASE_5_DESIGN_SYSTEM_DELIVERABLES.md` | Design-system handoff record |
