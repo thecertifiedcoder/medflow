@@ -3,7 +3,7 @@
 **Project codename:** MedFlow  
 **Working positioning:** Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow  
 **Competition:** TCC Hackathon 2026  
-**Documentation status:** Milestones 1A, 1B, 1C, **Milestone 1D (Phases 1D-1, 1D-2, and 1D-3 — live Neon PostgreSQL migration, seeding, live constraint/trigger verification, server-side staff APIs, UI polling cutover, and Cloud Firestore decommissioning under ADR `D-020`)**, **Phase DA-1 (Hackathon Demo Access under ADR `D-021`)**, and **Phase UX-1 (Platform Experience, Information Architecture & Interface Rework under ADR `D-022` — 7 dedicated role-separated screens, context-aware top bars, `StaffWorkspaceLayout`, dedicated `/demo` judge hub, dedicated `/staff/admin` administrator workspace, focused `/staff/queue` clinical workspace, and calm `.mf-pt` patient self-intake experience at `/intake`)** are implemented and verified. Milestone 2 (patient intake persistence, server-side Gemini transcription/extraction, and staff review mutations) and Milestone 3 (cryptographic Evidence Integrity Engine / `EVIDENCE_HMAC_SECRET`) are pending separate founder approval.
+**Documentation status (updated 2026-11-23):** Milestones 1A–1D, Phase DA-1, Milestone 2 and the current UX redesign are implemented in the repository. The Milestone 2 verification report recorded typed/voice intake, Neon persistence, Gemini extraction, staff review mutations, audit history and 77 passing tests at that checkpoint. Subsequent landing/intake, clinical workspace and Judge Access commits added further UI/helper tests; run the latest test suite again before submission. Basic exact-substring quote grounding is implemented in the extraction service. Advanced Milestone 3 EIE persistence (field-level evidence rows written for each extraction, provenance envelope and HMAC signing/verification) remains incomplete.
 
 ## 1. What this project is
 
@@ -44,7 +44,7 @@ Voice input is a first-class P0 feature, not a decorative extra. Typed entry rem
 17. `16_SOURCES_AND_ATTRIBUTIONS.md`
 18. `17_SPRINT_LOG_AND_AI_DISCLOSURE.md`
 
-The founder will attach one standalone HTML design-system file directly to the Google AI Studio conversation. That attachment is the sole visual source of truth. No separate design-tokens file, extracted CSS token sheet or design-system specification is required. The PRD, UX, data and safety documents continue to govern product behaviour.
+The standalone HTML design-system reference is stored under `public/assets/aistudio/` and was used as the visual source for the current interface. For new design work, inspect the authoritative MedFlow design-system HTML in the repository. That attachment is the sole visual source of truth. No separate design-tokens file, extracted CSS token sheet or design-system specification is required. The PRD, UX, data and safety documents continue to govern product behaviour.
 
 ## 4. Source-of-truth rules
 
