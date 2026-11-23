@@ -43,6 +43,7 @@ Runtime services and principal dependencies present in the current application:
 - **Next.js (App Router) & React** — Application framework and UI runtime.
 - **Firebase Authentication (`firebase`, `firebase-admin`)** — Staff Google Sign-In identity provider (same-origin `/__/auth/*` proxy) and server-side ID-token signature/claim verification (Cloud Firestore fully decommissioned in Phase 1D-3).
 - **Neon PostgreSQL (`pg`, `drizzle-orm`, `drizzle-kit`, `@types/pg`)** — Live authoritative relational database driver, typed ORM, and SQL migration runner (Milestone 1D Phases 1D-1, 1D-2, and 1D-3 complete and live-verified).
-- **Google Gen AI SDK (`@google/genai`)** — Server-only Gemini text extraction and audio transcription.\n- **OpenRouter API (`openrouter/free`)** — Optional server-side text-extraction fallback after Gemini attempts; not used for audio.
+- **Google Gen AI SDK (`@google/genai`)** — Server-only Gemini text extraction and audio transcription.
+- **OpenRouter API (`openrouter/free`)** — Optional server-side text-extraction fallback after Gemini attempts; not used for audio.
 - **Zod** — Runtime request, environment, and AI-extraction schema validation.
 - **Lucide React & Motion** — UI iconography and accessible animations.
