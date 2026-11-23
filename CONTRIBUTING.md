@@ -1,13 +1,13 @@
 # Contributing to MedFlow
 
-This repository is documentation-first until the implementation is created during the official hackathon sprint. Contributors should preserve the approved product and safety boundaries.
+This repository contains the MedFlow hackathon prototype and its supporting specifications. Contributors should preserve the implemented product, security and clinical safety boundaries. The project is in submission-stabilisation mode; avoid unrelated features or broad refactors.
 
 ## Before making changes
 
 1. Read `docs/00_START_HERE.md` and `AGENTS.md`.
 2. Read the documents directly relevant to your change, including their linked dependencies.
 3. Check `docs/15_DECISIONS_AND_RISKS.md` for open decisions and constraints.
-4. Confirm whether the change is within MVP scope in `docs/04_MVP_SCOPE_AND_ACCEPTANCE.md`.
+4. Confirm whether the change is within MVP scope in `docs/04_MVP_SCOPE_AND_ACCEPTANCE.md`. For submission preparation, prefer documentation corrections and targeted bug fixes over new product scope.
 
 ## Working conventions
 
