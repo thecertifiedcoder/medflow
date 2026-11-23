@@ -161,16 +161,18 @@ Additional acceptance criteria for the evidence-integrity milestone:
 
 An exact quotation match proves only that the words can be located in the source narrative. It does not prove clinical truth or semantic correctness. See D-018 and `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
 
-## 7. Phase UX-1 Platform Experience Rework acceptance criteria (2026-11-22)
+## 7. Phase UX-1 Platform Experience Rework acceptance criteria (2026-11-22 historical checkpoint)
 
-Before Milestone 2 implementation begins, the application must satisfy the following Phase UX-1 information-architecture and role-separation acceptance criteria (`D-022`):
+> **Superseding update (2026-11-23):** The checklist below records the pre-Milestone-2 UX-1 acceptance gate completed on 2026-11-22. Milestone 2 (live patient submission, voice transcription, Gemini/OpenRouter extraction, staff review mutations, and 5 seeded synthetic intakes `MF-DEMO-0101`..`MF-DEMO-0105`) and the 2026-11-23 clinical-only Judge Access simplification (`/demo` → `/staff/queue`, with `/staff/login` redirecting to `/demo` and `/staff/admin` redirecting to `/staff/queue`) have since been implemented.
 
-- [x] `/` functions as a clear, uncluttered entry-point selection screen with three distinct cards: **1. Patient Intake (`/intake`)**, **2. Staff Sign-In (`/staff/login`)**, and **3. Hackathon Demo Access (`/demo`)**.
-- [x] `/intake` renders in the dedicated `.mf-pt` patient theme with `PatientTopBar` (`data-testid="patient-top-bar"`), zero staff/admin/demo navigation clutter, an always-visible emergency human-help banner, a 3-step patient journey structure, and an honest UX-1 Milestone 2 readiness boundary (no fake submission persistence).
-- [x] `/demo` provides a dedicated judge evaluation hub explaining synthetic demonstration data (`DEMO-CLINIC-01`) with one-click **Enter as Demo Administrator** (`POST /api/demo/session/admin` → `/staff/admin`) and **Enter as Demo Clinical Staff** (`POST /api/demo/session/staff` → `/staff/queue`).
-- [x] `/staff/login` is dedicated to provisioned staff Google Sign-In with role-aware post-authentication routing (`admin` → `/staff/admin`, `nurse`/`doctor` → `/staff/queue`) and a quiet link to `/demo` for judges.
-- [x] `/staff/queue` provides a focused clinical workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, with real PostgreSQL queue polling, workflow/priority filters, and an intentional, educational empty state (`0` synthetic intake rows in UX-1) without embedded admin panels.
-- [x] `/staff/admin` provides a dedicated facility administration workspace backed by `GET /api/staff/admin/facility` (`activeStaffCount`, `totalIntakesCount`, `unassignedIntakesCount`) for `admin` users and enforces HTTP 403 / restricted access UI (`data-testid="admin-role-restricted-panel"`) for `nurse`/`doctor` users.
-- [x] `/staff/intakes/[intakeId]` renders inside `StaffAccessGate` + `StaffWorkspaceLayout`, separating all 6 clinical sections (Patient source, AI draft, Supporting evidence, Staff review, Operational workflow, Audit timeline) and handling loading, 404 not-found, and error states cleanly.
-- [x] All 7 routes render without horizontal overflow across desktop (`1440×900`), tablet (`768×1024`), and mobile (`390×844`) viewports.
+Historical Phase UX-1 gate items verified prior to Milestone 2 (`D-022`):
+
+- [x] `/` structured as an uncluttered entry-point selection screen (subsequently refined on 2026-11-23 to focus on Patient Intake and Judge Access).
+- [x] `/intake` rendered in the `.mf-pt` patient theme with `PatientTopBar` (`data-testid="patient-top-bar"`), zero staff/admin/demo clutter, emergency human-help banner, and 3-step patient journey (expanded in Milestone 2 with live persistence and voice transcription).
+- [x] `/demo` evaluation hub tested (later simplified on 2026-11-23 to **Judge Access** entering `/staff/queue` as Demo Clinical Staff).
+- [x] `/staff/login` Google Sign-In portal verified (redirected to `/demo` in the 2026-11-23 judge-facing UI while retaining Firebase token verification server-side).
+- [x] `/staff/queue` focused clinical workspace inside `StaffAccessGate` + `StaffWorkspaceLayout` with PostgreSQL queue polling and filters (later populated with `MF-DEMO-0101`..`MF-DEMO-0105` in Milestone 2).
+- [x] `/staff/admin` dedicated workspace backed by `GET /api/staff/admin/facility` and HTTP 403 / restricted access UI verified in UX-1 (page route redirected to `/staff/queue` on 2026-11-23 while retaining API RBAC enforcement).
+- [x] `/staff/intakes/[intakeId]` inside `StaffAccessGate` + `StaffWorkspaceLayout`, separating clinical sections and handling loading/404/error states cleanly.
+- [x] Responsive rendering verified without horizontal overflow across desktop (`1440×900`), tablet (`768×1024`), and mobile (`390×844`) viewports.
 

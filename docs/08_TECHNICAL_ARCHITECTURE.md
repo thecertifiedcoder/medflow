@@ -19,13 +19,13 @@ The application framework is **Next.js with the App Router**. This is an explici
 | Styling | Application CSS derived directly from the attached HTML design-system file | Match the attached HTML; do not create a separate design-token file or visual specification. |
 | Server/API | **Next.js Route Handlers** under `app/api/**/route.ts` | No separate Express or Python backend for the MVP. |
 | Authentication | Firebase Authentication (Google Sign-In + same-origin `/__/auth/*` proxy) | Staff identity is verified server-side via `firebase-admin` `verifyIdToken(token)` (no IAM required). Authentication alone grants zero clinical privileges. |
-| Database | **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) — approved via `D-020` | Authoritative relational store for facilities, staff profiles, memberships, patient intakes, evidence rows, and append-only audit events. All reads/writes occur through server-side Next.js Route Handlers. *(Transitional Firestore files remain untouched during Phase 1D-1 until Phase 1D-3 decommissioning.)* |
-| Queue updates | Authenticated facility-scoped Route Handlers + visibility-aware polling (Phase 1D-2) | Replaces client-side Firestore `onSnapshot` listeners so no database credentials or direct DB connections ever reach the browser. |
-| AI extraction | Google Gemini API (primary) with Gemini model fallback and optional OpenRouter `openrouter/free` fallback | Text-only OpenRouter fallback; all output is parsed, validated with Zod and passed through the same exact-substring quote-grounding logic. AI output remains non-authoritative. |
-| Voice transcription | Gemini audio transcription through the currently supported official API/model | Verify exact model ID, API, audio format and limits from current official docs before implementation. |
+| Database | **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) — approved via `D-020` | Authoritative relational store for facilities, staff profiles, memberships, patient intakes, evidence rows, and append-only audit events. All reads/writes occur through server-side Next.js Route Handlers. *(Legacy Cloud Firestore artifacts were fully decommissioned in Phase 1D-3.)* |
+| Queue updates | Authenticated facility-scoped Route Handlers + visibility-aware polling (Phase 1D-2) | Replaces client-side Firestore listeners so no database credentials or direct DB connections ever reach the browser. |
+| AI extraction | Google Gemini API (primary `gemini-4-hydrogen`, fallback `gemini-3.1-flash-lite`) and optional OpenRouter `openrouter/free` fallback | Text-only OpenRouter fallback; all output is parsed, validated with Zod and passed through the same exact-substring quote-grounding logic (`groundBriefQuotesAgainstNarrative`). AI output remains non-authoritative. |
+| Voice transcription | Gemini audio transcription (`gemini-3.5-transcribe` via `@google/genai`) | Server-side verbatim transcription; raw audio bytes are processed transiently and never persisted. |
 | Validation | Zod + PostgreSQL constraints & triggers | Validate every untrusted request and model response at runtime; enforce tenant isolation, immutability, staff-review consistency, and action-to-actor integrity in PostgreSQL. |
-| Tests | Node test runner (`node:test`), schema/constraint tests, integration and browser checks | Test business rules, DB invariants, authorization boundaries, and failure states. |
-| Deployment target | Google Cloud Run or another verified Node.js host that supports the selected Next.js features | Confirm the actual build and runtime configuration before claiming deployment readiness. |
+| Tests | Node test runner (`node:test` executed via `tsx --test`), TypeScript, ESLint, and browser verification | Test business rules, DB invariants, authorization boundaries, AI validation/grounding, and failure states. |
+| Deployment target | Vercel (Next.js App Router, Node.js runtime Route Handlers, built via `next build --webpack`) | Always verify live database, AI extraction, and Judge Access endpoints after environment or commit updates. |
 
 Do not silently change this stack. If a chosen platform cannot run the required Next.js App Router application or a required server capability, stop and report the exact incompatibility and options. Do not quietly substitute Vite/React, client-only Firebase writes, another backend framework or a different database. Any change requires founder approval and a corresponding documentation decision.
 
@@ -75,37 +75,59 @@ src/
     invariants.ts        # Canonical demo facility, 10-action audit actor map, review state helpers
     schema.ts            # Authoritative Drizzle PostgreSQL schema (6 tables, 12 enums, composite FKs, CHECKs)
     index.ts             # Server-only lazy pg.Pool + Drizzle connector (DATABASE_URL)
-    seed.ts              # Idempotent founder-run CLI seed script (DATABASE_URL_UNPOOLED)
+    migrate.ts           # Drizzle SQL migration runner (DATABASE_URL_UNPOOLED)
+    seed.ts              # Idempotent CLI seed script (canonical facility, demo staff, MF-DEMO-0101..0105)
     schema.test.ts       # Offline schema, trigger, action-to-actor, and invariant tests
+    live-verification.test.ts # Live Neon PostgreSQL schema, trigger & constraint verification tests
   app/
-    (patient)/
-      intake/
-        page.tsx
-    (staff)/
-      staff/
-        login/page.tsx
-        queue/page.tsx
-        intakes/[intakeId]/page.tsx
+    page.tsx             # Public landing page
+    demo/page.tsx        # Judge Access launcher
+    intake/page.tsx      # Patient self-intake flow
+    staff/
+      login/page.tsx     # Redirects to /demo in hackathon Judge Access build
+      admin/page.tsx     # Redirects to /staff/queue in hackathon Judge Access build
+      queue/page.tsx     # Clinical staff intake queue workspace
+      intakes/[intakeId]/page.tsx # Staff intake review & audit timeline
     api/
+      health/route.ts
+      demo/
+        logout/route.ts
+        status/route.ts
+        session/admin/route.ts
+        session/staff/route.ts
       intakes/route.ts
       intakes/transcribe/route.ts
       intakes/[intakeId]/extract/route.ts
-      staff/session/route.ts
-      staff/intakes/route.ts
-      staff/intakes/[intakeId]/review/route.ts
-      staff/intakes/[intakeId]/brief-review/route.ts
-      staff/intakes/[intakeId]/priority/route.ts
-      staff/intakes/[intakeId]/status/route.ts
+      staff/
+        session/route.ts
+        admin/facility/route.ts
+        intakes/route.ts
+        intakes/[intakeId]/route.ts
+        intakes/[intakeId]/review/route.ts
+        intakes/[intakeId]/brief-review/route.ts
+        intakes/[intakeId]/priority/route.ts
+        intakes/[intakeId]/status/route.ts
     layout.tsx
     globals.css
   components/
+    demo/
+    home/
+    layout/
     patient/
     staff/
-    shared/
+    ui/
   lib/
-    env/
-    firebase/            # Firebase Auth client + server verifyIdToken (legacy Firestore removed in Phase 1D-3)
-    schemas/
+    ai/                  # OpenRouter text-extraction fallback (openrouter/free)
+    api/                 # Route Handler domain logic (public intake, extraction, staff, demo)
+    auth/                # Signed Demo Session cookies + server-side Firebase/PostgreSQL authorization
+    db/                  # PostgreSQL staff/intake repository & safe error mapping
+    env/                 # Validated public and server-only environment configuration
+    firebase/            # Firebase Auth client + lazy server verifyIdToken
+    gemini/              # Gemini transcription, extraction, fallback chain, and quote grounding
+    http/
+    patient/
+    schemas/             # Zod intake, extraction, and staff API schemas
+    staff/               # Visibility-aware polling, queue helpers, API client
 ```
 
 Keep route handlers thin and move database/domain logic into testable server-only modules. Never import `src/db/*` or `firebase-admin` into Client Components. Do not create a separate `server/` Express application.
@@ -172,16 +194,19 @@ The diagram describes logical responsibilities under ADR `D-020`. Keep the MVP a
 
 Implement the API contracts in `docs/09_DATA_MODEL_AND_API_CONTRACTS.md` as Next.js Route Handlers:
 
-- `GET /api/staff/session` *(implemented in Phase 1D-2)*
-- `GET /api/staff/intakes` *(implemented in Phase 1D-2)*
-- `GET /api/staff/intakes/[intakeId]` *(implemented in Phase 1D-2)*
-- `POST /api/intakes` *(Milestone 2)*
-- `POST /api/intakes/transcribe` *(Milestone 2)*
-- `POST /api/intakes/[intakeId]/extract` *(Milestone 2)*
-- `POST /api/staff/intakes/[intakeId]/review` *(Milestone 2)*
-- `POST /api/staff/intakes/[intakeId]/brief-review` *(Milestone 2)*
-- `POST /api/staff/intakes/[intakeId]/priority` *(Milestone 2)*
-- `POST /api/staff/intakes/[intakeId]/status` *(Milestone 2)*
+- `GET /api/health` *(implemented — runtime health probe)*
+- `GET /api/demo/status`, `POST /api/demo/session/staff`, `POST /api/demo/session/admin`, `POST /api/demo/logout` *(implemented — Phase DA-1 server-signed Hackathon Demo Mode)*
+- `GET /api/staff/session` *(implemented — Phase 1D-2 + DA-1 unified session resolution)*
+- `GET /api/staff/admin/facility` *(implemented — Phase DA-1 admin-only facility summary)*
+- `GET /api/staff/intakes` *(implemented — Phase 1D-2)*
+- `GET /api/staff/intakes/[intakeId]` *(implemented — Phase 1D-2)*
+- `POST /api/intakes` *(implemented — Milestone 2)*
+- `POST /api/intakes/transcribe` *(implemented — Milestone 2)*
+- `POST /api/intakes/[intakeId]/extract` *(implemented — Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/review` *(implemented — Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/brief-review` *(implemented — Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/priority` *(implemented — Milestone 2)*
+- `POST /api/staff/intakes/[intakeId]/status` *(implemented — Milestone 2)*
 
 Route Handlers validate request bodies, authenticate/authorise protected actions, call domain services and return safe response shapes. Do not expose provider errors, stack traces, credentials or database internals. Use the Web Request/Response APIs supported by Next.js Route Handlers. Do not create a parallel Express API.
 

@@ -2,6 +2,7 @@
   "name": "medflow",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.4.4",
   "description": "MedFlow — Voice-first, AI-assisted clinical intake and nurse-controlled patient-flow prototype (TCC Hackathon 2026).",
   "scripts": {
     "dev": "next dev -p 3000 -H 0.0.0.0",

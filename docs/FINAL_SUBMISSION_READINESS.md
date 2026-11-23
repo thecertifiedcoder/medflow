@@ -8,29 +8,30 @@ This checklist separates confirmed repository facts from actions that still requ
 
 ## Current repository and deployment facts
 
-- [x] Latest source is on the `main` branch.
-- [x] Latest audited application commit: `369048fe61ee1f02f97cc37c6f80ed579aaa877f`.
-- [x] Judge-facing page entry is labelled **Judge Access**.
-- [x] Judge flow enters the Clinical Staff workspace.
-- [x] `/staff/login` redirects to `/demo`.
-- [x] `/staff/admin` redirects to `/staff/queue`.
-- [x] Server-side demo-session and staff API authorization code remain in the repository.
+- [x] Latest audited GitHub commit reported prior to this workspace audit: `369048fe61ee1f02f97cc37c6f80ed579aaa877f` (note: `.git` is not mounted inside the AI Studio container workspace, so commit history must be verified on GitHub / local clone).
+- [x] Judge-facing page entry is labelled **Judge Access** (`/demo`) and enters the Clinical Staff workspace (`/staff/queue`).
+- [x] `/staff/login` redirects (`307`) to `/demo`; `/staff/admin` redirects (`307`) to `/staff/queue` (verified live on deployed URL and locally).
+- [x] Server-side demo-session and staff API authorization code remain intact in the repository.
 - [x] `OPENROUTER_API_KEY` is documented in `.env.example` as an optional server-side variable.
-- [x] GitHub reports a successful Vercel status for the latest application commit.
-- [ ] Runtime behaviour on the deployed Vercel URL has not been independently verified in this review.
+- [x] `package.json` declares `"packageManager": "bun@1.4.4"` matching `bun.lock` and uses `"build": "NODE_ENV=production next build --webpack"`.
+- [x] `MedFlow_GitHub_Import_Pack.zip` was inspected (`unzip -l`): 705 KB, 33 pre-sprint Nov 21 planning/design-system files, **zero** `.env` or secret files.
+- [x] Secret-pattern scan of repository source/docs found **zero** committed private keys, `.env` files, or DB credentials (`firebase-applet-config.json` contains public Firebase Web SDK identifiers only; test files use clearly synthetic placeholder strings).
+- [x] Latest local verification checks passed: `bun run typecheck`, `bun run test` (`97` passed, `0` failed, `3` live-Neon DB tests skipped when `DATABASE_URL` is unset in shell), `bun run lint`, and `bun run build` (`next build --webpack`).
+- [ ] Local workspace fixes (Vercel HTTP 500 fix via lazy `firebase-admin` loading + `next build --webpack`, plus this packaging/documentation update) must be pushed to GitHub `main` and redeployed to Vercel.
+- [ ] Runtime end-to-end behaviour (`POST /api/intakes`, `GET /api/staff/session`, AI extraction) on the redeployed Vercel URL has not yet been re-verified post-fix.
 - [ ] Repository is currently private. TCC judges must be able to access the source repository publicly.
 
 ## Release blockers
 
-- [ ] Resolve the previously reported production `POST /api/intakes` HTTP 500 and verify a real synthetic submission against the deployed URL.
-- [ ] Verify Vercel Production variables: `DATABASE_URL`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` (if enabled), `MEDFLOW_DEMO_MODE_ENABLED=true`, `MEDFLOW_DEMO_SESSION_SECRET`, and `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE`.
-- [ ] Verify patient submission, Neon persistence, AI extraction/fallback, queue visibility, staff actions and audit history on the deployed environment.
-- [ ] Check the current repository and Git history for credentials, private patient content, production exports and unsafe artifacts before changing visibility.
-- [ ] Inspect or remove `MedFlow_GitHub_Import_Pack.zip` before public release; its contents were not inspected in this audit.
-- [ ] Review Firebase API-key restrictions and authorised domains for the tracked browser configuration before public release.
-- [ ] Capture actual screenshots from the deployed application and add them to the README or a dedicated documentation folder.
-- [ ] Review the sprint log with the team so contributor names, dates, AI tools and sprint/pre-sprint distinctions are accurate.
-- [ ] Decide whether to add a software licence. No `LICENSE` file is currently present; public visibility alone does not grant reuse rights.
+- [ ] Export/push the latest workspace changes (including the `POST /api/intakes` & `GET /api/staff/session` Vercel HTTP 500 fix and documentation updates) to GitHub `main`, redeploy on Vercel, and verify a real synthetic submission + Judge Access session against `https://medflow-seven-tau.vercel.app`.
+- [ ] Verify Vercel Production variables: `DATABASE_URL`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` (if enabled), `MEDFLOW_DEMO_MODE_ENABLED=true`, `MEDFLOW_DEMO_SESSION_SECRET`, and `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE=DEMO-CLINIC-01`.
+- [ ] Verify patient submission, Neon persistence, AI extraction/fallback, queue visibility, staff actions and audit history on the redeployed Vercel environment.
+- [ ] Check Git history on the GitHub clone before switching repository visibility to public (confirm no historical `.env` commits or private exports exist in commit history).
+- [ ] Decide whether to delete `MedFlow_GitHub_Import_Pack.zip` (non-secret Nov 21 snapshot containing obsolete `design-system/` files) and `public/assets/aistudio/Paste_*` conversation artifacts before making the repository public.
+- [ ] Review Firebase API-key HTTP referrer restrictions and authorised domains for `firebase-applet-config.json` before public release.
+- [ ] Capture actual screenshots from the deployed application (`public/` currently has zero runtime app screenshots) and add them to the README.
+- [ ] Review the sprint log with the team so contributor names, dates, AI tools and sprint/pre-sprint distinctions match Git history accurately.
+- [ ] Decide whether to add a software `LICENSE` file. No `LICENSE` file is currently present; public visibility alone does not grant reuse rights.
 
 ## Required TCC submission items
 

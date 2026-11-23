@@ -22,4 +22,7 @@ Begin with [`00_START_HERE.md`](00_START_HERE.md). It defines the mandatory read
 | `15_DECISIONS_AND_RISKS.md` | Decisions, open questions and tracked risks |
 | `16_SOURCES_AND_ATTRIBUTIONS.md` | Research references and attribution record |
 | `17_SPRINT_LOG_AND_AI_DISCLOSURE.md` | Sprint progress, contributions and AI disclosure |
+| `19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md` | Deterministic Evidence Integrity Engine specification and Milestone 3 boundary |
+| `FINAL_SUBMISSION_READINESS.md` | Final submission readiness checklist, release blockers and test sequence |
 | `PHASE_4_DELIVERABLES.md` | Earlier phase handoff record |
+| `../security_spec.md` | Database invariants, composite FKs, triggers and Demo Mode security spec |

@@ -146,8 +146,8 @@ Important documentation:
 
 ### Prerequisites
 
-- Bun (the repository includes `bun.lock`)
-- Node.js compatible with the installed Next.js version
+- Bun (`bun@1.4.4`, matching `bun.lock`)
+- Node.js (`v22.x`, compatible with the installed Next.js 16.4.6 runtime)
 - A Neon PostgreSQL database
 - A Gemini API key for voice transcription and primary extraction
 - An OpenRouter API key for the optional text-extraction fallback
@@ -226,7 +226,7 @@ Configure the required production variables in the Vercel project settings. In p
 - `MEDFLOW_DEMO_SESSION_SECRET`
 - `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE=DEMO-CLINIC-01`
 
-After changing environment variables, create a new deployment. A successful Vercel build/status check does not by itself prove that live database writes, Gemini calls or OpenRouter fallback work at runtime.
+After changing environment variables, create a new deployment. The production build uses Next.js Webpack mode (`next build --webpack`) to preserve runtime `firebase-admin` resolution cleanly on Vercel serverless functions. A successful build/status check does not by itself prove that live database writes, Gemini calls or OpenRouter fallback work at runtime — always verify a live synthetic submission and Judge Access session against the deployed URL after redeploying.
 
 ---
 
@@ -262,12 +262,15 @@ List any additional tools used by team members in the sprint disclosure, with th
 
 ---
 
-## Submission status
+## Submission status and media checklist
 
 The TCC participant guide requires a public source repository, a publicly accessible product demonstration video of **4:50–5:10**, and one official form submission. The video must demonstrate the real application, be publicly viewable, tag Tech Conference Calabar and include:
 
 - `#CTCHackathon2026`
 - `#TechConferenceCalabar`
+
+- **Demo video URL:** Pending final recording and public post by the team.
+- **Rendered application screenshots:** No verified runtime screenshots are currently committed under `public/` (`public/assets/aistudio/` holds the visual reference HTML only). Capture and commit real screenshots of `/intake`, voice transcript review, `/demo`, `/staff/queue`, and `/staff/intakes/[intakeId]` before final judging.
 
 The official form is distributed through the organisers' WhatsApp group. Confirm the current form and instructions with the team lead before submission. See [docs/01_HACKATHON_RULES_AND_SCORECARD.md](docs/01_HACKATHON_RULES_AND_SCORECARD.md) and [docs/FINAL_SUBMISSION_READINESS.md](docs/FINAL_SUBMISSION_READINESS.md).
 

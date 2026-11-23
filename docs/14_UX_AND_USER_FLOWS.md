@@ -598,9 +598,11 @@ The founder-provided standalone HTML file attached directly to the Google AI Stu
 - Visual decisions are defined only by the standalone HTML file attached to the AI Studio conversation. This document defines behaviour and information hierarchy, not a separate visual system.
 - Product name remains a codename until clearance.
 
-## 16. Phase UX-1 Platform Experience Rework (implemented under ADR `D-022`)
+## 16. Phase UX-1 Platform Experience Rework (historical 2026-11-22 baseline under ADR `D-022`)
 
-Before beginning Milestone 2 (patient intake persistence, server-side Gemini transcription/extraction, and staff review mutations), Phase UX-1 restructures MedFlow's information architecture, route separation, context-aware layout shells, and user journeys so patients, clinical staff, facility administrators, and hackathon judges each have a dedicated, unambiguous path.
+> **Superseding update (2026-11-23):** Section 16 documents the pre-Milestone-2 UX-1 structure created on 2026-11-22. As noted at the top of this file, Milestone 2 (real intake submission, voice transcription, Gemini/OpenRouter extraction, and staff review mutations) and the 2026-11-23 **Judge Access** simplification (`/demo` → **Enter Clinical Workspace** → `/staff/queue`, with `/staff/login` redirecting to `/demo` and `/staff/admin` redirecting to `/staff/queue`) have since been implemented.
+
+Before beginning Milestone 2 (patient intake persistence, server-side Gemini transcription/extraction, and staff review mutations), Phase UX-1 restructured MedFlow's initial information architecture, route separation, context-aware layout shells, and user journeys:
 
 ### 16.1 Route and screen architecture
 

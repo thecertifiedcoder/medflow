@@ -155,8 +155,8 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
 - Cut over active staff UI components (`StaffAuthProvider`, `StaffAccessGate`, `StaffLoginPanel`, `StaffQueueShell`, `StaffIntakeDetailShell`) from Firestore reads to authenticated same-origin APIs with 5-second visibility-aware polling (`src/lib/staff/polling.ts`, `src/lib/staff/api-client.ts`).
 
 #### Phase 1D-3 — Live Neon Migration, Seeding, Verification & Legacy Firestore Cleanup (implemented & live-verified)
-- Added `src/db/migrate.ts` (`npm run db:migrate`) and `src/db/live-verification.test.ts`; applied `drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql` against live Neon PostgreSQL via `DATABASE_URL_UNPOOLED`.
-- Executed idempotent `src/db/seed.ts` (`npm run db:seed`) twice against live Neon PostgreSQL, seeding canonical `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`). (Initial staff admin seeding remains gated on founder-supplied `SEED_ADMIN_*` environment variables per Option 2B.)
+- Added `src/db/migrate.ts` (`bun run db:migrate`) and `src/db/live-verification.test.ts`; applied `drizzle/0000_initial_medflow_schema.sql` and `drizzle/0001_immutability_triggers.sql` against live Neon PostgreSQL via `DATABASE_URL_UNPOOLED`.
+- Executed idempotent `src/db/seed.ts` (`bun run db:seed`) twice against live Neon PostgreSQL, seeding canonical `demo-clinic-01` / `DEMO-CLINIC-01` (`MedFlow Synthetic Demo Clinic`). (Initial staff admin seeding remains gated on founder-supplied `SEED_ADMIN_*` environment variables per Option 2B.)
 - Executed live PostgreSQL schema, trigger, and negative constraint verification (PG-01 through PG-06 inside a rolled-back transaction) plus live pooled `DATABASE_URL` Drizzle reads via `createDrizzleStaffRepository()`.
 - Removed all legacy Firestore artifacts (`firestore.rules`, `firebase-blueprint.json`, `src/lib/firebase/errors.ts`, `src/lib/firebase/security-rules.test.ts`, `src/components/shared/FirebaseErrorBoundary.tsx`, `src/lib/schemas/staff.ts`), removed `@firebase/eslint-plugin-security-rules`, and refactored `src/lib/firebase/client.ts` & `config.ts` to Firebase Authentication only while keeping Google Sign-In and the same-origin `/__/auth/*` proxy intact.
 
@@ -165,34 +165,21 @@ Per ADR `D-020`, **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) replaces
 - Added server-controlled Hackathon Demo Mode (`MEDFLOW_DEMO_MODE_ENABLED` disabled by default; `MEDFLOW_DEMO_SESSION_SECRET` ≥ 32 chars required fail-closed; optional `MEDFLOW_DEMO_SESSION_TTL_SECONDS`).
 - Extended idempotent `src/db/seed.ts` to seed canonical synthetic demo accounts `demo-admin-01` (`admin`) and `demo-staff-01` (`nurse`) strictly inside `demo-clinic-01` (`DEMO-CLINIC-01`) with zero Neon schema changes.
 - Implemented HMAC-SHA256 signed HTTP-only cookie sessions (`src/lib/auth/demo-session.ts`), CSRF protection, server-side revocation (`POST /api/demo/logout`), persona endpoints (`POST /api/demo/session/admin`, `POST /api/demo/session/staff`, `GET /api/demo/status`), unified `resolveStaffSession`/`requireAuthorizedStaff` enforcement, and read-only admin-only `GET /api/staff/admin/facility`.
-- Updated `/` with the prominent **Try the MedFlow Demo** launcher (**Demo Administrator**, **Demo Clinical Staff**, **Start Patient Intake**), added active demo role badge & **Sign out** in header/workspace, and preserved Firebase Google Sign-In (`/staff/login`) completely intact.
 
-### Phase UX-1 — Platform Experience, Information Architecture & Interface Rework (implemented & verified under ADR `D-022`)
+### Phase UX-1 & Judge Access Simplification (implemented; superseded by 2026-11-23 redesign)
 
-- Reworked MedFlow's route structure and navigation into 7 focused screens with strict role and context separation:
-  - `/` — Public Home entry-point selector (**Patient Intake `/intake`**, **Staff Sign-In `/staff/login`**, **Hackathon Demo Access `/demo`**).
-  - `/intake` — Dedicated `.mf-pt` patient self-intake experience with `PatientTopBar` (zero staff/admin/demo links), emergency safety banner, 3-step journey, interactive typed/voice mode preview, synthetic presets, confirmation checkbox, and honest Milestone 2 readiness boundary.
-  - `/demo` — Dedicated Hackathon Demo Access evaluation hub routing **Enter as Demo Administrator** → `/staff/admin` and **Enter as Demo Clinical Staff** → `/staff/queue`.
-  - `/staff/login` — Dedicated Staff Google Sign-In screen with role-aware destination (`admin` → `/staff/admin`, `nurse`/`doctor` → `/staff/queue`) and quiet judge link to `/demo`.
-  - `/staff/queue` — Focused Clinical Staff Workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, with real PostgreSQL queue polling, workflow/priority filters, and an intentional empty state (`0` rows).
-  - `/staff/admin` — Dedicated Administrator Workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`, backed by `GET /api/staff/admin/facility` and enforcing HTTP 403 / restricted UI (`data-testid="admin-role-restricted-panel"`) for non-admin roles.
-  - `/staff/intakes/[intakeId]` — Dedicated 6-section provenance-separated intake review workspace inside `StaffAccessGate` + `StaffWorkspaceLayout`.
-- Verified across all 5 user journeys and 3 viewports (`1440×900`, `768×1024`, `390×844`) with zero Milestone 2 scope leakage.
+- Phase UX-1 (`D-022`) restructured routes and shells (`/`, `/intake`, `/demo`, `/staff/login`, `/staff/queue`, `/staff/admin`, `/staff/intakes/[intakeId]`).
+- Subsequent 2026-11-23 updates redesigned the landing/intake/clinical workspace and simplified public judge entry to clinical-only **Judge Access** (`/demo` → **Enter Clinical Workspace** → `/staff/queue`), redirecting `/staff/login` to `/demo` and `/staff/admin` to `/staff/queue` while retaining server-side authorization boundaries intact.
 
-### Milestone 2 — Patient intake and server-side Gemini extraction (requires separate approval after UX-1 review)
+### Milestone 2 — Patient intake, voice transcription, AI extraction & staff workflow (implemented & previously reported verified)
 
-- Implement typed intake and real voice recording/transcription, transcript edit/confirmation and durable PostgreSQL intake persistence (`POST /api/intakes` atomic transaction with `intake_created` / `transcript_confirmed` audit events).
-- Follow `D-015` (Option 1B): AI extraction is triggered and persisted only through an authenticated, active, facility-authorised staff session via server-side PostgreSQL transactions.
-- Gemini remains server-side; preserve the strict schema and source-quote requirements.
-- Keep original narrative, AI draft and staff-reviewed copy separate.
-- Stop before implementing the full Evidence Integrity Engine; report the extraction workflow and test results.
+- Implemented typed intake and real browser voice recording/transcription (`POST /api/intakes/transcribe`), transcript edit/confirmation, and durable PostgreSQL intake persistence (`POST /api/intakes` atomic transaction with `intake_created` / `transcript_confirmed` audit events), plus 5 seeded synthetic intakes (`MF-DEMO-0101`..`MF-DEMO-0105`).
+- Following `D-015` (Option 1B), AI extraction (`POST /api/intakes/[intakeId]/extract`) is triggered and persisted only through an authenticated, active, facility-authorised staff session, using Gemini primary (`gemini-4-hydrogen`), Gemini fallback (`gemini-3.1-flash-lite`), and optional OpenRouter `openrouter/free` fallback, strict Zod validation, and deterministic exact-substring quote grounding (`groundBriefQuotesAgainstNarrative`).
+- Preserves original narrative, AI draft, and staff-reviewed copy separately across `review`, `brief-review`, `priority`, and `status` mutations.
 
-### Milestone 3 — Evidence Integrity Engine (requires separate approval)
+### Milestone 3 — Advanced Evidence Integrity Engine (deferred / not implemented)
 
-- Configure server-only `EVIDENCE_HMAC_SECRET` and implement the deterministic algorithm in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`.
-- Add exact quote matching, server-derived UTF-16 source spans, field-level evidence states persisted to `intake_evidence`, narrative/draft hashes, HMAC provenance signing and verification.
-- Add staff UI for inspecting source matches and resolving unsupported/ambiguous evidence.
-- Run the complete synthetic EIE test matrix and stop with a verified report.
+- Configuring `EVIDENCE_HMAC_SECRET`, persisting per-extraction field-level `intake_evidence` rows with UTF-16 source spans, and HMAC-SHA-256 provenance envelope signing/verification remain deferred (`docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`).
 
 No milestone or phase may be silently combined with the next. Each requires its own explicit founder approval and stop report.
 
