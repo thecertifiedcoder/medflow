@@ -64,7 +64,7 @@ The form will be shared in the official WhatsApp group. Double-check all links b
 | Criterion | Points | What judges assess | MedFlow evidence to demonstrate |
 |---|---:|---|---|
 | Working Product & Technical Execution | 25 | Actually works, robust features, handled edge cases, honest demo | Complete patient-to-staff workflow; voice and typed paths; transcript editing; extraction; live queue; human review; audit; failure handling |
-| Architecture & Code Quality | 20 | Clean structure, security, sensible data handling, readable code | Clear client/server separation; validated contracts; protected secrets; Firestore rules; modular services; meaningful tests; clean public repo |
+| Architecture & Code Quality | 20 | Clean structure, security, sensible data handling, readable code | Clear client/server separation; validated contracts; protected secrets; PostgreSQL constraints and immutability triggers; facility-scoped server authorization; modular services; meaningful tests; clean public repo |
 | Scalability & Production Readiness | 15 | Deployed/deployable; credible path from prototype to real users | Deployed web app; facility-scoped data model; clear environment configuration; error handling; documented limitations and future integration path |
 | Innovation & Local Relevance | 15 | Fresh approach to a specific Calabar/Cross River/Nigerian problem | Voice-first patient storytelling; Nigerian English/Pidgin transcription testing; evidence-linked extraction; address workflow friction, not generic AI chat |
 | Demo Quality & Communication | 10 | Clear five-minute story and product demonstration | Tight narrative; one synthetic patient; show real microphone capture and queue update; explain safety boundary and architecture |
