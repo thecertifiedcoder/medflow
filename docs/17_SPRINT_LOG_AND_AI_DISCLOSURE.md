@@ -1,6 +1,6 @@
 # MedFlow — Sprint Log and AI Disclosure
 
-> Update this file during the official sprint. Do not backdate or invent implementation work. This file is a template until entries are recorded.
+> This log records implementation and verification evidence available as of 23 November 2026. Historical entries are retained. Verification statements attributed to Google AI Studio are reports from its build environment; rerun the latest checks and confirm the live Vercel deployment before submission.
 
 ## Sprint log
 
@@ -39,6 +39,6 @@ Record the exact services, SDKs, libraries, datasets and assets used, including 
 - **Next.js (App Router) & React** — Application framework and UI runtime.
 - **Firebase Authentication (`firebase`, `firebase-admin`)** — Staff Google Sign-In identity provider (same-origin `/__/auth/*` proxy) and server-side ID-token signature/claim verification (Cloud Firestore fully decommissioned in Phase 1D-3).
 - **Neon PostgreSQL (`pg`, `drizzle-orm`, `drizzle-kit`, `@types/pg`)** — Live authoritative relational database driver, typed ORM, and SQL migration runner (Milestone 1D Phases 1D-1, 1D-2, and 1D-3 complete and live-verified).
-- **Google Gen AI SDK (`@google/genai`)** — Installed for server-only Gemini API integration (live intake extraction/transcription scheduled for Milestone 2 after UX-1 review).
+- **Google Gen AI SDK (`@google/genai`)** — Server-only Gemini text extraction and audio transcription.\n- **OpenRouter API (`openrouter/free`)** — Optional server-side text-extraction fallback after Gemini attempts; not used for audio.
 - **Zod** — Runtime request, environment, and AI-extraction schema validation.
 - **Lucide React & Motion** — UI iconography and accessible animations.
