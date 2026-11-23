@@ -1,8 +1,11 @@
 # MedFlow — Evidence Integrity Engine Specification
 
+> **Current implementation boundary (2026-11-23):** `src/lib/gemini/service.ts` implements `groundBriefQuotesAgainstNarrative`, which checks supplied source quotations as exact substrings of the confirmed narrative, strips unsupported quotes and demotes affected claims to unclear (or removes unsupported reported-detail items). The same post-processing path is used for Gemini and OpenRouter text extraction. The staff UI also checks verbatim supporting quotes. The database schema includes `intake_evidence` and an `ai_brief_provenance` field, and the repository can read evidence rows; however, the current extraction persistence method updates the AI brief and audit event without inserting field-level `intake_evidence` rows or an HMAC provenance envelope. Do not claim complete persisted EIE or HMAC verification until those writes and tests exist.
+
+
 **Document ID:** MED-EVID-019  
-**Status:** Founder-approved algorithm direction; implementation pending  
-**Target:** Post-Milestone 2, after real intake and staff-triggered extraction exist  
+**Status:** Partial runtime implementation; advanced persisted provenance implementation pending  
+**Target:** Milestone 3 for persisted field-level evidence and cryptographic provenance  
 **Purpose:** Make AI-extracted intake information auditable against the patient's immutable, confirmed narrative.
 
 ## 1. Product objective
