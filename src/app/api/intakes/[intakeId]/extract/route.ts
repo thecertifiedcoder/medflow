@@ -1,4 +1,4 @@
-import { handleExtractIntakeBriefPost } from "../../../../../lib/api/intake-handlers";
+import { handleExtractIntakeBriefPost } from "../../../../../lib/api/intake-extract-handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

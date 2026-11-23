@@ -1,4 +1,4 @@
-import { handleCreatePatientIntakePost } from "../../../lib/api/intake-handlers";
+import { handleCreatePatientIntakePost } from "../../../lib/api/intake-public-handlers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

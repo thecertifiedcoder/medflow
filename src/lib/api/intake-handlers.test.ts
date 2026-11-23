@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   handleCreatePatientIntakePost,
   handleExtractIntakeBriefPost,
@@ -588,4 +590,66 @@ test("POST /api/intakes/[intakeId]/extract allows clinical staff to recover fail
   );
   assert.equal(body.aiBrief?.chiefConcern.value, "Sharp chest tightness");
 });
+
+test("Public intake route and handler module never statically import staff-authorization or firebase-admin", () => {
+  const root = process.cwd();
+  const publicHandlerSource = fs.readFileSync(
+    path.join(root, "src/lib/api/intake-public-handlers.ts"),
+    "utf8",
+  );
+  const publicRouteSource = fs.readFileSync(
+    path.join(root, "src/app/api/intakes/route.ts"),
+    "utf8",
+  );
+  const transcribeRouteSource = fs.readFileSync(
+    path.join(root, "src/app/api/intakes/transcribe/route.ts"),
+    "utf8",
+  );
+
+  for (const [label, source] of [
+    ["intake-public-handlers.ts", publicHandlerSource],
+    ["src/app/api/intakes/route.ts", publicRouteSource],
+    ["src/app/api/intakes/transcribe/route.ts", transcribeRouteSource],
+  ] as const) {
+    assert.doesNotMatch(
+      source,
+      /requireAuthorizedStaff|resolveStaffSession|firebase-admin|admin-auth|from\s+["']@\/lib\/auth\/staff-authorization["']/,
+      `${label} must not import runtime staff authorization or firebase-admin`,
+    );
+  }
+});
+
+test("POST /api/intakes catches unexpected non-DB errors and returns structured JSON 500 with X-Request-Id", async () => {
+  const req = new Request("http://localhost:3000/api/intakes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-request-id": "req-unexpected-500-test",
+    },
+    body: JSON.stringify({
+      facilityPublicCode: "DEMO-CLINIC-01",
+      idempotencyKey: "idem-key-unexpected-500-test",
+      inputMode: "typed",
+      confirmedNarrative:
+        "I have had sharp chest tightness for about two hours after walking upstairs.",
+    }),
+  });
+
+  const res = await handleCreatePatientIntakePost(req, {
+    repository: createMockRepository({
+      async createPatientIntake() {
+        throw new TypeError("Simulated unexpected runtime failure");
+      },
+    }),
+  });
+
+  assert.equal(res.status, 500);
+  assert.equal(res.headers.get("X-Request-Id"), "req-unexpected-500-test");
+  const body = (await res.json()) as {
+    error: { code: string; requestId?: string };
+  };
+  assert.equal(body.error.code, "DATABASE_QUERY_FAILED");
+  assert.equal(body.error.requestId, "req-unexpected-500-test");
+});
+
 

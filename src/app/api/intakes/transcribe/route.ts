@@ -1,4 +1,4 @@
-import { handleTranscribePatientAudioPost } from "../../../../lib/api/intake-handlers";
+import { handleTranscribePatientAudioPost } from "../../../../lib/api/intake-public-handlers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

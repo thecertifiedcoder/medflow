@@ -15,10 +15,11 @@ import {
   type StaffRepository,
 } from "@/lib/db/staff-repository";
 import {
+  extractBearerToken,
   TokenVerificationError,
-  verifyStaffBearerToken,
   type VerifiedStaffToken,
-} from "@/lib/firebase/admin-auth";
+  type VerifyTokenFn,
+} from "@/lib/firebase/token-types";
 import type { StaffRole } from "@/lib/schemas/intake";
 import type {
   AuthMode,
@@ -26,9 +27,7 @@ import type {
   ResolvedStaffProfile,
 } from "@/lib/schemas/staff-api";
 
-export type VerifyTokenFn = (
-  authorizationHeader: string | null | undefined,
-) => Promise<VerifiedStaffToken>;
+export type { VerifyTokenFn };
 
 export class StaffAuthorizationError extends Error {
   readonly statusCode: 401 | 403 | 503;
@@ -215,7 +214,17 @@ export async function resolveStaffSession(
   }
 
   // Path A: Standard Firebase Authentication Bearer ID token
-  const verify = options.verifyToken ?? verifyStaffBearerToken;
+  if (!options.verifyToken && !extractBearerToken(options.authorizationHeader)) {
+    throw new StaffAuthorizationError(
+      401,
+      "MISSING_OR_INVALID_AUTH_HEADER",
+      "A valid Authorization Bearer token is required.",
+    );
+  }
+
+  const verify =
+    options.verifyToken ??
+    (await import("@/lib/firebase/admin-auth")).verifyStaffBearerToken;
 
   let token: VerifiedStaffToken;
   try {

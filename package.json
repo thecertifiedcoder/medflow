@@ -5,7 +5,7 @@
   "description": "MedFlow — Voice-first, AI-assisted clinical intake and nurse-controlled patient-flow prototype (TCC Hackathon 2026).",
   "scripts": {
     "dev": "next dev -p 3000 -H 0.0.0.0",
-    "build": "NODE_ENV=production next build",
+    "build": "NODE_ENV=production next build --webpack",
     "start": "next start -H 0.0.0.0",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

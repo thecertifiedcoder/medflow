@@ -1,5 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  createInMemoryRevocationStore,
+  DEMO_SESSION_COOKIE_NAME,
+  mintDemoSessionToken,
+} from "@/lib/auth/demo-session";
 import {
   handleStaffBriefReviewPost,
   handleStaffIntakeDetailGet,
@@ -973,4 +980,109 @@ test("POST /api/staff/intakes/[intakeId]/priority and /status enforce domain mut
   );
   assert.equal(statusRes.status, 200);
 });
+
+test("Staff authorization and admin-auth isolate firebase-admin from top-level imports and Demo Mode / unauthenticated GET /api/staff/session", async () => {
+  const root = process.cwd();
+  const authSource = fs.readFileSync(
+    path.join(root, "src/lib/auth/staff-authorization.ts"),
+    "utf8",
+  );
+  const adminAuthSource = fs.readFileSync(
+    path.join(root, "src/lib/firebase/admin-auth.ts"),
+    "utf8",
+  );
+
+  // staff-authorization must import pure token types without statically importing admin-auth
+  assert.doesNotMatch(
+    authSource,
+    /from\s+["']@\/lib\/firebase\/admin-auth["']/,
+    "staff-authorization.ts must load admin-auth dynamically only when verifying Bearer tokens",
+  );
+  // admin-auth must not have top-level runtime imports of firebase-admin subpaths
+  assert.doesNotMatch(
+    adminAuthSource,
+    /^\s*import\s+(?!type\b).*["']firebase-admin\//m,
+    "admin-auth.ts must load firebase-admin subpaths lazily inside verifyStaffBearerToken",
+  );
+
+  const env = {
+    NODE_ENV: "production",
+    MEDFLOW_DEMO_MODE_ENABLED: "true",
+    MEDFLOW_DEMO_SESSION_SECRET:
+      "synthetic-test-only-demo-session-secret-0123456789abcdef0123456789",
+  };
+  const revocationStore = createInMemoryRevocationStore();
+  const minted = mintDemoSessionToken("clinical_staff", {
+    env,
+    now: () => FIXED_NOW,
+    revocationStore,
+  });
+
+  const demoStaffRepo = createRepository({
+    async findStaffAuthorizationByUid(uid) {
+      assert.equal(uid, "demo-staff-01");
+      return {
+        profile: {
+          uid: "demo-staff-01",
+          email: "demo.staff@medflow.synthetic",
+          displayName: "Demo Clinical Staff (Synthetic)",
+          active: true,
+        },
+        memberships: [
+          {
+            facilityId: "demo-clinic-01",
+            facilityName: "MedFlow Synthetic Demo Clinic",
+            facilityPublicCode: "DEMO-CLINIC-01",
+            role: "nurse",
+            isDemo: true,
+          },
+        ],
+      };
+    },
+  });
+
+  // 1) Valid Demo Mode cookie succeeds without calling verifyToken
+  const demoRes = await handleStaffSessionGet(
+    {
+      authorizationHeader: null,
+      cookieHeader: `${DEMO_SESSION_COOKIE_NAME}=${encodeURIComponent(minted.token)}`,
+      searchParams: new URLSearchParams(),
+    },
+    {
+      verifyToken: async () => {
+        throw new Error("Firebase Admin verifier must NOT be invoked for Demo Mode cookies");
+      },
+      repository: demoStaffRepo,
+      env,
+      now: () => FIXED_NOW,
+      revocationStore,
+    },
+  );
+  assert.equal(demoRes.status, 200);
+  const demoBody = (await demoRes.json()) as {
+    authMode: string;
+    authorizationStatus: string;
+  };
+  assert.equal(demoBody.authMode, "demo");
+  assert.equal(demoBody.authorizationStatus, "authorized");
+
+  // 2) Unauthenticated request without verifyToken override returns 401 JSON cleanly
+  const unauthRes = await handleStaffSessionGet(
+    {
+      authorizationHeader: null,
+      cookieHeader: null,
+      searchParams: new URLSearchParams(),
+    },
+    {
+      repository: demoStaffRepo,
+      env,
+      now: () => FIXED_NOW,
+      revocationStore,
+    },
+  );
+  assert.equal(unauthRes.status, 401);
+  const unauthBody = (await unauthRes.json()) as { error: { code: string } };
+  assert.equal(unauthBody.error.code, "MISSING_OR_INVALID_AUTH_HEADER");
+});
+
 

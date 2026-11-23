@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import type { DemoSessionRevocationStore } from "@/lib/auth/demo-session";
+import {
+  DemoSessionError,
+  type DemoSessionRevocationStore,
+} from "@/lib/auth/demo-session";
 import {
   requireAuthorizedStaff,
   resolveStaffSession,
   StaffAuthorizationError,
   type VerifyTokenFn,
 } from "@/lib/auth/staff-authorization";
-import { toSafeDatabaseError } from "@/lib/db/errors";
+import {
+  describeSafeServerError,
+  toSafeDatabaseError,
+} from "@/lib/db/errors";
 import {
   createDrizzleStaffRepository,
   type StaffRepository,
@@ -170,11 +176,29 @@ export function parseStaffQueueSearchParams(
   };
 }
 
-function handleStaffRouteError(error: unknown): NextResponse {
+function handleStaffRouteError(error: unknown, route = "staff"): NextResponse {
   if (error instanceof StaffAuthorizationError) {
     return jsonError(error.statusCode, error.errorCode, error.message);
   }
+  if (error instanceof DemoSessionError) {
+    const statusCode: 401 | 403 | 503 =
+      error.statusCode === 400 ? 401 : error.statusCode;
+    return jsonError(statusCode, error.errorCode, error.message);
+  }
   const safeDb = toSafeDatabaseError(error);
+  const diag = describeSafeServerError(error);
+  console.error(
+    JSON.stringify({
+      level: "error",
+      scope: "medflow.api.staff",
+      route,
+      httpStatus: safeDb.statusCode,
+      errorCategory: diag.category,
+      errorName: diag.errorName,
+      pgCode: diag.pgCode,
+      constraint: diag.constraint,
+    }),
+  );
   return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message);
 }
 
@@ -189,18 +213,18 @@ export async function handleStaffSessionGet(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
-  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
-    return jsonError(
-      400,
-      "INVALID_QUERY_PARAMS",
-      "Invalid facilityId query parameter.",
-    );
-  }
-
   try {
+    assertServerRuntime();
+
+    const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+    if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+      return jsonError(
+        400,
+        "INVALID_QUERY_PARAMS",
+        "Invalid facilityId query parameter.",
+      );
+    }
+
     const resolution = await resolveStaffSession({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -264,7 +288,7 @@ export async function handleStaffSessionGet(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "GET /api/staff/session");
   }
 }
 
@@ -279,17 +303,17 @@ export async function handleStaffQueueGet(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedQuery = parseStaffQueueSearchParams(input.searchParams);
-  if (!parsedQuery.ok) {
-    return jsonError(400, "INVALID_QUERY_PARAMS", parsedQuery.message);
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedQuery = parseStaffQueueSearchParams(input.searchParams);
+    if (!parsedQuery.ok) {
+      return jsonError(400, "INVALID_QUERY_PARAMS", parsedQuery.message);
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -334,7 +358,7 @@ export async function handleStaffQueueGet(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "GET /api/staff/intakes");
   }
 }
 
@@ -350,30 +374,30 @@ export async function handleStaffIntakeDetailGet(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedId = UUID_Schema.safeParse(input.intakeId);
-  if (!parsedId.success) {
-    return jsonError(
-      400,
-      "INVALID_INTAKE_ID",
-      "Intake ID must be a valid UUID.",
-    );
-  }
-
-  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
-  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
-    return jsonError(
-      400,
-      "INVALID_QUERY_PARAMS",
-      "Invalid facilityId query parameter.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedId = UUID_Schema.safeParse(input.intakeId);
+    if (!parsedId.success) {
+      return jsonError(
+        400,
+        "INVALID_INTAKE_ID",
+        "Intake ID must be a valid UUID.",
+      );
+    }
+
+    const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+    if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+      return jsonError(
+        400,
+        "INVALID_QUERY_PARAMS",
+        "Invalid facilityId query parameter.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -413,7 +437,7 @@ export async function handleStaffIntakeDetailGet(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "GET /api/staff/intakes/[intakeId]");
   }
 }
 
@@ -428,21 +452,21 @@ export async function handleStaffAdminFacilityGet(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const rawFacilityId = input.searchParams.get("facilityId")?.trim();
-  if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
-    return jsonError(
-      400,
-      "INVALID_QUERY_PARAMS",
-      "Invalid facilityId query parameter.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const rawFacilityId = input.searchParams.get("facilityId")?.trim();
+    if (rawFacilityId && !FACILITY_ID_REGEX.test(rawFacilityId)) {
+      return jsonError(
+        400,
+        "INVALID_QUERY_PARAMS",
+        "Invalid facilityId query parameter.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -506,7 +530,7 @@ export async function handleStaffAdminFacilityGet(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "GET /api/staff/admin/facility");
   }
 }
 
@@ -526,32 +550,32 @@ export async function handleStaffStartReviewPost(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedId = UUID_Schema.safeParse(input.intakeId);
-  if (!parsedId.success) {
-    return jsonError(
-      400,
-      "INVALID_INTAKE_ID",
-      "Intake ID must be a valid UUID.",
-    );
-  }
-
-  const parsedBody = StaffStartReviewRequestSchema.safeParse(
-    input.body ?? {},
-  );
-  if (!parsedBody.success) {
-    return jsonError(
-      400,
-      "INVALID_REVIEW_START_PAYLOAD",
-      parsedBody.error.issues[0]?.message ?? "Invalid review start request.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedId = UUID_Schema.safeParse(input.intakeId);
+    if (!parsedId.success) {
+      return jsonError(
+        400,
+        "INVALID_INTAKE_ID",
+        "Intake ID must be a valid UUID.",
+      );
+    }
+
+    const parsedBody = StaffStartReviewRequestSchema.safeParse(
+      input.body ?? {},
+    );
+    if (!parsedBody.success) {
+      return jsonError(
+        400,
+        "INVALID_REVIEW_START_PAYLOAD",
+        parsedBody.error.issues[0]?.message ?? "Invalid review start request.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -598,7 +622,7 @@ export async function handleStaffStartReviewPost(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "POST /api/staff/intakes/[intakeId]/review");
   }
 }
 
@@ -614,31 +638,31 @@ export async function handleStaffBriefReviewPost(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedId = UUID_Schema.safeParse(input.intakeId);
-  if (!parsedId.success) {
-    return jsonError(
-      400,
-      "INVALID_INTAKE_ID",
-      "Intake ID must be a valid UUID.",
-    );
-  }
-
-  const parsedBody = StaffBriefReviewRequestSchema.safeParse(input.body);
-  if (!parsedBody.success) {
-    return jsonError(
-      400,
-      "INVALID_BRIEF_REVIEW_PAYLOAD",
-      parsedBody.error.issues[0]?.message ??
-        "Invalid staff brief review payload.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedId = UUID_Schema.safeParse(input.intakeId);
+    if (!parsedId.success) {
+      return jsonError(
+        400,
+        "INVALID_INTAKE_ID",
+        "Intake ID must be a valid UUID.",
+      );
+    }
+
+    const parsedBody = StaffBriefReviewRequestSchema.safeParse(input.body);
+    if (!parsedBody.success) {
+      return jsonError(
+        400,
+        "INVALID_BRIEF_REVIEW_PAYLOAD",
+        parsedBody.error.issues[0]?.message ??
+          "Invalid staff brief review payload.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -698,7 +722,7 @@ export async function handleStaffBriefReviewPost(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "POST /api/staff/intakes/[intakeId]/brief-review");
   }
 }
 
@@ -714,30 +738,30 @@ export async function handleStaffPriorityPost(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedId = UUID_Schema.safeParse(input.intakeId);
-  if (!parsedId.success) {
-    return jsonError(
-      400,
-      "INVALID_INTAKE_ID",
-      "Intake ID must be a valid UUID.",
-    );
-  }
-
-  const parsedBody = StaffPriorityMutationRequestSchema.safeParse(input.body);
-  if (!parsedBody.success) {
-    return jsonError(
-      400,
-      "INVALID_PRIORITY_PAYLOAD",
-      parsedBody.error.issues[0]?.message ?? "Invalid priority payload.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedId = UUID_Schema.safeParse(input.intakeId);
+    if (!parsedId.success) {
+      return jsonError(
+        400,
+        "INVALID_INTAKE_ID",
+        "Intake ID must be a valid UUID.",
+      );
+    }
+
+    const parsedBody = StaffPriorityMutationRequestSchema.safeParse(input.body);
+    if (!parsedBody.success) {
+      return jsonError(
+        400,
+        "INVALID_PRIORITY_PAYLOAD",
+        parsedBody.error.issues[0]?.message ?? "Invalid priority payload.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -786,7 +810,7 @@ export async function handleStaffPriorityPost(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "POST /api/staff/intakes/[intakeId]/priority");
   }
 }
 
@@ -802,30 +826,30 @@ export async function handleStaffStatusPost(
   },
   deps: StaffHandlerDeps = {},
 ): Promise<NextResponse> {
-  assertServerRuntime();
-
-  const parsedId = UUID_Schema.safeParse(input.intakeId);
-  if (!parsedId.success) {
-    return jsonError(
-      400,
-      "INVALID_INTAKE_ID",
-      "Intake ID must be a valid UUID.",
-    );
-  }
-
-  const parsedBody = StaffStatusMutationRequestSchema.safeParse(input.body);
-  if (!parsedBody.success) {
-    return jsonError(
-      400,
-      "INVALID_STATUS_PAYLOAD",
-      parsedBody.error.issues[0]?.message ?? "Invalid workflow status payload.",
-    );
-  }
-
-  const repository = deps.repository ?? createDrizzleStaffRepository();
-  const now = deps.now ?? (() => new Date());
-
   try {
+    assertServerRuntime();
+
+    const parsedId = UUID_Schema.safeParse(input.intakeId);
+    if (!parsedId.success) {
+      return jsonError(
+        400,
+        "INVALID_INTAKE_ID",
+        "Intake ID must be a valid UUID.",
+      );
+    }
+
+    const parsedBody = StaffStatusMutationRequestSchema.safeParse(input.body);
+    if (!parsedBody.success) {
+      return jsonError(
+        400,
+        "INVALID_STATUS_PAYLOAD",
+        parsedBody.error.issues[0]?.message ?? "Invalid workflow status payload.",
+      );
+    }
+
+    const repository = deps.repository ?? createDrizzleStaffRepository();
+    const now = deps.now ?? (() => new Date());
+
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: input.authorizationHeader,
       cookieHeader: input.cookieHeader,
@@ -874,6 +898,6 @@ export async function handleStaffStatusPost(
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    return handleStaffRouteError(error);
+    return handleStaffRouteError(error, "POST /api/staff/intakes/[intakeId]/status");
   }
 }
