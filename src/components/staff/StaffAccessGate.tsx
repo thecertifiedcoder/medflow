@@ -88,10 +88,10 @@ export function StaffAccessGate({
             />
             <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
               {status === "initializing"
-                ? "Checking whether a verified staff or Hackathon Demo session is active in this browser..."
+                ? "Checking whether an active clinical workspace session is available..."
                 : status === "authenticating"
-                  ? "Completing Google Sign-In before verifying your clinical staff authorization..."
-                  : "Validating session credentials on the server and resolving provisioned facility membership from Neon PostgreSQL..."}
+                  ? "Completing sign-in before verifying clinical staff authorization..."
+                  : "Verifying clinical workspace authorization..."}
             </p>
           </div>
         </ClinicalPanel>
@@ -152,52 +152,33 @@ export function StaffAccessGate({
         }
       >
         {status === "unauthenticated" && (
-          <Alert tone="danger" title="Sign in or launch a Hackathon Demo role">
+          <Alert tone="danger" title="Clinical workspace access required">
             {errorMessage ??
-              "Unauthenticated visitors cannot access clinical intake queues or facility administration. Sign in with a provisioned Google staff account or enter Hackathon Demo Mode."}
+              "Please open Judge Access to start a verified clinical staff session before viewing the patient queue."}
           </Alert>
         )}
 
         {status === "unverified_email" && (
           <Alert tone="danger" title="Verified email required">
-            Your Google account email is not marked verified. Clinical staff
+            Your account email is not marked verified. Clinical staff
             authorization requires a verified email address.
           </Alert>
         )}
 
         {status === "unprovisioned" && firebaseUser && (
-          <div className="grid gap-3">
-            <Alert
-              tone="warning"
-              title="Sign-in succeeded, but staff access is not provisioned"
-            >
-              Google Sign-In and server ID token verification succeeded, but no
-              provisioned clinical staff profile exists in MedFlow&apos;s
-              database for this account. Authentication alone never grants
-              clinical access.
-            </Alert>
-            <div className="rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4">
-              <p className="mf-t-label m-0 mb-2 font-semibold text-[var(--mf-text)]">
-                Signed-in identity (for administrator provisioning)
-              </p>
-              <dl className="mf-dl m-0">
-                <dt>UID</dt>
-                <dd className="mf-mono break-all text-[13px]">
-                  {firebaseUser.uid}
-                </dd>
-                <dt>Email</dt>
-                <dd className="mf-mono text-[13px]">
-                  {firebaseUser.email ?? "Unavailable"}
-                </dd>
-              </dl>
-            </div>
-          </div>
+          <Alert
+            tone="warning"
+            title="Staff access is not provisioned for this account"
+          >
+            Use Judge Access to explore the clinical workspace with the
+            demonstration clinical staff session.
+          </Alert>
         )}
 
         {status === "inactive" && (
           <Alert tone="danger" title="Staff profile inactive">
-            Your staff record is currently inactive or has no active facility
-            memberships. Contact a facility administrator to restore access.
+            This staff profile is currently inactive. Use Judge Access to enter
+            the demonstration clinical workspace.
           </Alert>
         )}
 
@@ -210,17 +191,11 @@ export function StaffAccessGate({
 
         <div className="flex flex-wrap gap-3 pt-1">
           {status === "unauthenticated" ? (
-            <>
-              <ButtonLink href="/staff/login" variant="primary" size="md">
-                <Icon name="lock" size="btn" />
-                Staff Sign-In
-                <Icon name="arrow" size="btn" />
-              </ButtonLink>
-              <ButtonLink href="/demo" variant="secondary" size="md">
-                <Icon name="shield" size="btn" />
-                Hackathon Demo Access
-              </ButtonLink>
-            </>
+            <ButtonLink href="/demo" variant="primary" size="md">
+              <Icon name="shieldCheck" size="btn" />
+              Judge Access
+              <Icon name="arrow" size="btn" />
+            </ButtonLink>
           ) : (
             <>
               <Button
@@ -231,7 +206,7 @@ export function StaffAccessGate({
                 Re-check authorization
               </Button>
               <ButtonLink href="/demo" variant="secondary" size="md">
-                Hackathon Demo Access
+                Judge Access
               </ButtonLink>
               <Button
                 variant="secondary"

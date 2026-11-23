@@ -1,5 +1,5 @@
-import { StaffAdminShell } from "@/components/staff/StaffAdminShell";
+import { redirect } from "next/navigation";
 
 export default function StaffAdminPage() {
-  return <StaffAdminShell />;
+  redirect("/staff/queue");
 }

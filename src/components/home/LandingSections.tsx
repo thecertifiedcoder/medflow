@@ -288,8 +288,8 @@ export function LandingSections() {
               Start with the patient&apos;s story.
             </h2>
             <p className="m-0 text-[15.5px] leading-[1.55] text-[var(--mf-navy-text)]">
-              Try the guided patient self-intake or open the demonstration
-              workspaces to see the clinical review flow in action.
+              Try the guided patient self-intake or open Judge Access to see the
+              clinical review flow in action.
             </p>
           </div>
 
@@ -309,7 +309,7 @@ export function LandingSections() {
               size="lg"
               className="!min-h-[48px] !border-[var(--mf-navy-text-muted)] !bg-transparent !px-6 !text-white hover:!bg-[var(--mf-navy-800)]"
             >
-              Explore Demo
+              Judge Access
             </ButtonLink>
           </div>
         </div>

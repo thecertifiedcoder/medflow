@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { LandingHeroPreview } from "@/components/home/LandingHeroPreview";
 import { LandingSections } from "@/components/home/LandingSections";
 import { ButtonLink, Icon } from "@/components/ui";
@@ -46,20 +45,9 @@ export default function HomePage() {
                 className="!min-h-[48px] w-full justify-center !px-6 text-[15.5px] sm:w-auto"
                 data-testid="home-cta-demo-access"
               >
-                Explore Demo
+                Judge Access
               </ButtonLink>
             </div>
-
-            <p className="m-0 text-[13.5px] text-[var(--mf-text-secondary)]">
-              Clinic personnel?{" "}
-              <Link
-                href="/staff/login"
-                data-testid="home-cta-staff-login"
-                className="font-semibold text-[var(--mf-primary-dark)] underline underline-offset-2 hover:text-[var(--mf-text)]"
-              >
-                Staff Sign-In
-              </Link>
-            </p>
           </div>
 
           {/* Right: Structured MedFlow Product Composition */}

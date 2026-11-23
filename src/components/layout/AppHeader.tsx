@@ -13,7 +13,6 @@ export function AppHeader() {
   const {
     status,
     authMode,
-    demoPersona,
     activeFacility,
     staffProfile,
     signOutStaff,
@@ -58,17 +57,10 @@ export function AppHeader() {
     );
   }
 
-  // 2. Compact Clinical Staff Header (/staff/queue, /staff/admin, /staff/intakes/*)
+  // 2. Compact Clinical Staff Header (/staff/queue, /staff/intakes/*)
   if (isStaffWorkspaceRoute) {
     const roleLabel =
-      activeFacility?.role === "admin"
-        ? "Admin"
-        : activeFacility?.role === "doctor"
-          ? "Doctor"
-          : "Nurse";
-    const workspaceTitle = pathname.startsWith("/staff/admin")
-      ? "Facility Admin"
-      : "Clinical Workspace";
+      activeFacility?.role === "doctor" ? "Doctor" : "Nurse";
 
     return (
       <header
@@ -89,7 +81,7 @@ export function AppHeader() {
           />
 
           <span className="hidden truncate text-[13.5px] font-medium text-[var(--mf-navy-text)] sm:inline">
-            {workspaceTitle}
+            Clinical Workspace
           </span>
 
           {isAuthorized && authMode === "demo" && (
@@ -110,9 +102,7 @@ export function AppHeader() {
                 data-testid="active-session-chip"
               >
                 {authMode === "demo"
-                  ? demoPersona === "admin"
-                    ? "Demo Admin"
-                    : "Demo Staff"
+                  ? "Clinical Staff"
                   : staffProfile.displayName}{" "}
                 <span className="text-[var(--mf-navy-text-muted)]">
                   · {roleLabel}
@@ -129,22 +119,16 @@ export function AppHeader() {
               </Button>
             </>
           ) : (
-            <div className="flex items-center gap-2">
-              <ButtonLink href="/demo" variant="onDark" size="sm">
-                Demo
-              </ButtonLink>
-              <ButtonLink href="/staff/login" variant="onDark" size="sm">
-                Staff Sign-In
-              </ButtonLink>
-            </div>
+            <ButtonLink href="/demo" variant="onDark" size="sm">
+              Judge Access
+            </ButtonLink>
           )}
         </div>
       </header>
     );
   }
 
-  // 3. Public & Entry Navigation (/, /demo, /staff/login)
-  const isStaffLogin = pathname.startsWith("/staff/login");
+  // 3. Public & Entry Navigation (/, /demo)
   const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
 
   return (
@@ -174,18 +158,6 @@ export function AppHeader() {
           </Link>
 
           <Link
-            href="/staff/login"
-            aria-current={isStaffLogin ? "page" : undefined}
-            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] px-3 py-1.5 text-[13.5px] font-medium no-underline transition-colors ${
-              isStaffLogin
-                ? "bg-[var(--mf-navy-700)] text-white font-semibold"
-                : "text-[var(--mf-navy-text)] hover:bg-[var(--mf-navy-800)] hover:text-white"
-            }`}
-          >
-            Staff Sign-In
-          </Link>
-
-          <Link
             href="/demo"
             aria-current={isDemoRoute ? "page" : undefined}
             className={`ml-1 inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] border px-3.5 py-1.5 text-[13.5px] font-semibold no-underline transition-colors ${
@@ -194,7 +166,7 @@ export function AppHeader() {
                 : "border-[var(--mf-primary-light)]/50 bg-[var(--mf-navy-800)] text-white hover:border-[var(--mf-primary-light)] hover:bg-[var(--mf-navy-700)]"
             }`}
           >
-            Demo
+            Judge Access
           </Link>
         </nav>
 
@@ -204,13 +176,13 @@ export function AppHeader() {
             href="/demo"
             aria-current={isDemoRoute ? "page" : undefined}
             onClick={() => setMobileMenuOpen(false)}
-            className={`inline-flex min-h-[36px] items-center rounded-[4px] border px-3 text-[13px] font-semibold no-underline transition-colors ${
+            className={`inline-flex min-h-[36px] items-center whitespace-nowrap rounded-[4px] border px-3 text-[13px] font-semibold no-underline transition-colors ${
               isDemoRoute
                 ? "border-[var(--mf-primary)] bg-[var(--mf-primary)] text-white"
                 : "border-[var(--mf-primary-light)]/45 bg-[var(--mf-navy-800)] text-white"
             }`}
           >
-            Demo
+            Judge Access
           </Link>
 
           <button
@@ -244,19 +216,6 @@ export function AppHeader() {
               <Icon name="arrow" size="sm" />
             </Link>
             <Link
-              href="/staff/login"
-              aria-current={isStaffLogin ? "page" : undefined}
-              onClick={() => setMobileMenuOpen(false)}
-              className={`flex min-h-[44px] items-center justify-between rounded-[4px] px-3 text-[14px] font-medium no-underline hover:bg-[var(--mf-navy-700)] ${
-                isStaffLogin
-                  ? "bg-[var(--mf-navy-700)] text-white font-semibold"
-                  : "text-[var(--mf-navy-text)]"
-              }`}
-            >
-              <span>Staff Sign-In</span>
-              <Icon name="lock" size="sm" />
-            </Link>
-            <Link
               href="/demo"
               aria-current={isDemoRoute ? "page" : undefined}
               onClick={() => setMobileMenuOpen(false)}
@@ -266,7 +225,7 @@ export function AppHeader() {
                   : "text-[var(--mf-navy-text)]"
               }`}
             >
-              <span>Explore Demo</span>
+              <span>Judge Access</span>
               <Icon name="shieldCheck" size="sm" />
             </Link>
           </div>

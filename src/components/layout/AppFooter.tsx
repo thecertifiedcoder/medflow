@@ -44,13 +44,7 @@ export function AppFooter() {
               href="/demo"
               className="font-medium text-[var(--mf-text-secondary)] no-underline hover:text-[var(--mf-primary-dark)] hover:underline"
             >
-              Explore Demo
-            </Link>
-            <Link
-              href="/staff/login"
-              className="font-medium text-[var(--mf-text-secondary)] no-underline hover:text-[var(--mf-primary-dark)] hover:underline"
-            >
-              Staff Sign-In
+              Judge Access
             </Link>
           </nav>
         </div>

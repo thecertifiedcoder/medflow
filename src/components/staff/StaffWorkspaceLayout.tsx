@@ -24,15 +24,10 @@ export function StaffWorkspaceLayout({
   const { signOutStaff } = useStaffAuth();
   const { staffProfile, serverSession, activeFacility } = context;
 
-  const isAdmin = activeFacility.role === "admin";
   const isDemoSession = serverSession.authMode === "demo";
 
   const roleLabel =
-    activeFacility.role === "admin"
-      ? "Administrator"
-      : activeFacility.role === "doctor"
-        ? "Doctor"
-        : "Nurse";
+    activeFacility.role === "doctor" ? "Doctor" : "Nurse";
 
   return (
     <div className="mf-dash-wrap">
@@ -67,21 +62,6 @@ export function StaffWorkspaceLayout({
                 </span>
               ) : null}
             </Link>
-
-            {isAdmin && (
-              <Link
-                href="/staff/admin"
-                aria-current={activeSection === "admin" ? "page" : undefined}
-                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
-                  activeSection === "admin"
-                    ? "bg-[var(--mf-primary)] text-white"
-                    : "border border-[var(--mf-border)] bg-[var(--mf-surface)] text-[var(--mf-text)]"
-                }`}
-              >
-                <Icon name="shield" size="sm" />
-                <span>Admin</span>
-              </Link>
-            )}
           </nav>
 
           {isDemoSession && (
@@ -89,7 +69,7 @@ export function StaffWorkspaceLayout({
               href="/demo"
               className="inline-flex min-h-[36px] shrink-0 items-center rounded-[5px] px-2.5 text-[12.5px] font-medium text-[var(--mf-text-secondary)] no-underline hover:bg-[var(--mf-surface-subtle)] hover:text-[var(--mf-text)]"
             >
-              Demo Hub
+              Judge Access
             </Link>
           )}
         </div>
@@ -123,30 +103,14 @@ export function StaffWorkspaceLayout({
             ) : null}
           </Link>
 
-          {isAdmin && (
-            <Link
-              href="/staff/admin"
-              aria-current={
-                pathname === "/staff/admin" || activeSection === "admin"
-                  ? "page"
-                  : undefined
-              }
-              className="mf-nav__item"
-              data-testid="nav-facility-admin"
-            >
-              <Icon name="shield" size="md" />
-              <span>Facility Admin</span>
-            </Link>
-          )}
-
           {isDemoSession && (
             <Link
               href="/demo"
               className="mf-nav__item mt-2"
               data-testid="nav-demo-hub"
             >
-              <Icon name="users" size="md" />
-              <span>Demo Hub</span>
+              <Icon name="shieldCheck" size="md" />
+              <span>Judge Access</span>
             </Link>
           )}
 
