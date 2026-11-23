@@ -4,6 +4,7 @@ export interface ApiErrorBody {
   readonly error: {
     readonly code: string;
     readonly message: string;
+    readonly requestId?: string;
   };
 }
 
@@ -25,19 +26,26 @@ export function jsonError(
   status: number,
   code: string,
   message: string,
+  options?: { readonly requestId?: string },
 ): NextResponse<ApiErrorBody> {
+  const headers: Record<string, string> = {
+    "Cache-Control": "no-store",
+  };
+  if (options?.requestId) {
+    headers["X-Request-Id"] = options.requestId;
+  }
+
   return NextResponse.json(
     {
       error: {
         code,
         message,
+        ...(options?.requestId ? { requestId: options.requestId } : {}),
       },
     },
     {
       status,
-      headers: {
-        "Cache-Control": "no-store",
-      },
+      headers,
     },
   );
 }

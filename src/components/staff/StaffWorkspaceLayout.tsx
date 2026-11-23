@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import type { AuthorizedStaffContext } from "@/components/staff/StaffAccessGate";
-import { Badge, Button, Icon } from "@/components/ui";
+import { Button, Icon } from "@/components/ui";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
 
 export interface StaffWorkspaceLayoutProps {
@@ -22,45 +22,30 @@ export function StaffWorkspaceLayout({
 }: StaffWorkspaceLayoutProps) {
   const pathname = usePathname() ?? "";
   const { signOutStaff } = useStaffAuth();
-  const { staffProfile, serverSession, activeFacility, activeFacilityId } =
-    context;
+  const { staffProfile, serverSession, activeFacility } = context;
 
   const isAdmin = activeFacility.role === "admin";
   const isDemoSession = serverSession.authMode === "demo";
 
-  const roleDisplayLabel = isDemoSession
-    ? serverSession.demoPersona === "admin"
-      ? "Demo Administrator (admin)"
-      : "Demo Clinical Staff (nurse)"
-    : `${staffProfile.displayName} (${activeFacility.role})`;
+  const roleLabel =
+    activeFacility.role === "admin"
+      ? "Administrator"
+      : activeFacility.role === "doctor"
+        ? "Doctor"
+        : "Nurse";
 
   return (
     <div className="mf-dash-wrap">
-      {/* Responsive Workspace Navigation Bar for Tablet & Mobile (< 1100px) */}
+      {/* Compact Navigation Bar for Mobile & Tablet (< 1100px) */}
       <div
-        className="border-b border-[var(--mf-border)] bg-[var(--mf-surface)] px-4 py-2.5 lg:hidden"
+        className="border-b border-[var(--mf-border)] bg-[var(--mf-surface)] px-4 py-2 lg:hidden"
         data-testid="workspace-mobile-nav"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2">
           <nav
-            aria-label="Workspace mobile navigation"
-            className="flex flex-wrap items-center gap-1.5"
+            aria-label="Clinical workspace navigation"
+            className="flex items-center gap-1.5"
           >
-            {isAdmin && (
-              <Link
-                href="/staff/admin"
-                aria-current={activeSection === "admin" ? "page" : undefined}
-                className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-[4px] px-3 py-1.5 text-[13px] font-semibold no-underline ${
-                  activeSection === "admin"
-                    ? "bg-[var(--mf-primary)] text-white"
-                    : "border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] text-[var(--mf-text)]"
-                }`}
-              >
-                <Icon name="shield" size="sm" />
-                Facility Admin
-              </Link>
-            )}
-
             <Link
               href="/staff/queue"
               aria-current={
@@ -68,45 +53,75 @@ export function StaffWorkspaceLayout({
                   ? "page"
                   : undefined
               }
-              className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-[4px] px-3 py-1.5 text-[13px] font-semibold no-underline ${
+              className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
                 activeSection === "queue" || activeSection === "detail"
                   ? "bg-[var(--mf-primary)] text-white"
-                  : "border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] text-[var(--mf-text)]"
+                  : "border border-[var(--mf-border)] bg-[var(--mf-surface)] text-[var(--mf-text)]"
               }`}
             >
               <Icon name="list" size="sm" />
-              Clinical Queue
+              <span>Patient Queue</span>
               {typeof queueTotalCount === "number" ? (
-                <span className="mf-mono ml-1 rounded-[3px] bg-black/15 px-1.5 py-0.5 text-[11px]">
+                <span className="mf-mono rounded-[3px] bg-black/15 px-1.5 py-0.5 text-[11px]">
                   {queueTotalCount}
                 </span>
               ) : null}
             </Link>
 
-            <Link
-              href="/demo"
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] px-3 py-1.5 text-[13px] font-semibold text-[var(--mf-text-secondary)] no-underline"
-            >
-              Switch Role
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/staff/admin"
+                aria-current={activeSection === "admin" ? "page" : undefined}
+                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
+                  activeSection === "admin"
+                    ? "bg-[var(--mf-primary)] text-white"
+                    : "border border-[var(--mf-border)] bg-[var(--mf-surface)] text-[var(--mf-text)]"
+                }`}
+              >
+                <Icon name="shield" size="sm" />
+                <span>Admin</span>
+              </Link>
+            )}
           </nav>
 
-          <Badge tone="neutral" className="mf-mono">
-            {activeFacility.facilityPublicCode}
-          </Badge>
+          {isDemoSession && (
+            <Link
+              href="/demo"
+              className="inline-flex min-h-[36px] shrink-0 items-center rounded-[5px] px-2.5 text-[12.5px] font-medium text-[var(--mf-text-secondary)] no-underline hover:bg-[var(--mf-surface-subtle)] hover:text-[var(--mf-text)]"
+            >
+              Demo Hub
+            </Link>
+          )}
         </div>
       </div>
 
-      <div className="mf-dash">
-        {/* Desktop Role-Aware Workspace Sidebar (>= 1100px) */}
+      <div className="mf-dash !min-h-[calc(100vh-56px)]">
+        {/* Compact Desktop Sidebar (>= 1100px) */}
         <aside
           className="mf-dash__nav"
-          aria-label="Staff workspace navigation"
+          aria-label="Clinical workspace navigation"
           data-testid="workspace-sidebar"
         >
-          <div className="mf-nav__label">
-            {isAdmin ? "Admin & Clinical" : "Clinical Workspace"}
-          </div>
+          <div className="mf-nav__label">Workspace</div>
+
+          <Link
+            href="/staff/queue"
+            aria-current={
+              pathname === "/staff/queue" ||
+              activeSection === "queue" ||
+              activeSection === "detail"
+                ? "page"
+                : undefined
+            }
+            className="mf-nav__item"
+            data-testid="nav-clinical-queue"
+          >
+            <Icon name="list" size="md" />
+            <span>Patient Queue</span>
+            {typeof queueTotalCount === "number" ? (
+              <span className="mf-nav__count">{queueTotalCount}</span>
+            ) : null}
+          </Link>
 
           {isAdmin && (
             <Link
@@ -120,49 +135,28 @@ export function StaffWorkspaceLayout({
               data-testid="nav-facility-admin"
             >
               <Icon name="shield" size="md" />
-              <span>Facility administration</span>
+              <span>Facility Admin</span>
             </Link>
           )}
 
-          <Link
-            href="/staff/queue"
-            aria-current={
-              pathname === "/staff/queue" || activeSection === "queue"
-                ? "page"
-                : undefined
-            }
-            className="mf-nav__item"
-            data-testid="nav-clinical-queue"
-          >
-            <Icon name="list" size="md" />
-            <span>Clinical intake queue</span>
-            {typeof queueTotalCount === "number" ? (
-              <span className="mf-nav__count">{queueTotalCount}</span>
-            ) : null}
-          </Link>
+          {isDemoSession && (
+            <Link
+              href="/demo"
+              className="mf-nav__item mt-2"
+              data-testid="nav-demo-hub"
+            >
+              <Icon name="users" size="md" />
+              <span>Demo Hub</span>
+            </Link>
+          )}
 
-          <div className="mf-nav__label mt-3">Platform paths</div>
-
-          <Link href="/demo" className="mf-nav__item" data-testid="nav-demo-hub">
-            <Icon name="users" size="md" />
-            <span>Hackathon Demo Hub</span>
-          </Link>
-
-          <Link href="/" className="mf-nav__item" data-testid="nav-public-home">
-            <Icon name="arrowLeft" size="md" />
-            <span>Public Home</span>
-          </Link>
-
-          <div className="mf-nav__foot grid gap-2">
+          <div className="mf-nav__foot grid gap-2.5">
             <div className="grid gap-0.5">
-              <div className="text-[12px] font-semibold text-white">
+              <div className="text-[12.5px] font-semibold text-white">
                 {staffProfile.displayName}
               </div>
-              <div className="text-[11px] text-[var(--mf-navy-text-muted)]">
-                {roleDisplayLabel}
-              </div>
-              <div className="mf-mono text-[11px] text-[var(--mf-primary-light)]">
-                {activeFacility.facilityPublicCode} · {activeFacilityId}
+              <div className="text-[11.5px] text-[var(--mf-navy-text-muted)]">
+                {roleLabel} · {activeFacility.facilityName}
               </div>
             </div>
 

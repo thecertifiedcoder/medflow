@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, eq, ne, or } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb, type MedFlowDatabase } from "@/db";
 import {
   auditEvents,
@@ -9,6 +9,7 @@ import {
   patientIntakes,
   staffProfiles,
 } from "@/db/schema";
+import { extractPgErrorMetadata } from "@/lib/db/errors";
 import { assertServerRuntime } from "@/lib/env/server";
 import {
   ClinicalIntakeBriefSchema,
@@ -428,6 +429,7 @@ export function createDrizzleStaffRepository(
           referenceCode: patientIntakes.referenceCode,
           patientDisplayName: patientIntakes.patientDisplayName,
           age: patientIntakes.age,
+          confirmedNarrative: patientIntakes.confirmedNarrative,
           inputMode: patientIntakes.inputMode,
           transcriptionStatus: patientIntakes.transcriptionStatus,
           aiStatus: patientIntakes.aiStatus,
@@ -465,22 +467,31 @@ export function createDrizzleStaffRepository(
         params.offset + params.limit,
       );
 
-      const items: StaffQueueItem[] = sliced.map((row) => ({
-        id: row.id,
-        facilityId: row.facilityId,
-        referenceCode: row.referenceCode,
-        patientDisplayName: row.patientDisplayName ?? null,
-        age: row.age ?? null,
-        inputMode: row.inputMode,
-        transcriptionStatus: row.transcriptionStatus,
-        aiStatus: row.aiStatus,
-        staffReviewStatus: row.staffReviewStatus,
-        staffAssignedPriority: row.staffAssignedPriority,
-        workflowStatus: row.workflowStatus,
-        demoRecord: row.demoRecord,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      }));
+      const items: StaffQueueItem[] = sliced.map((row) => {
+        const cleanNarrative = row.confirmedNarrative.replace(/\s+/g, " ").trim();
+        const narrativePreview =
+          cleanNarrative.length > 160
+            ? `${cleanNarrative.slice(0, 157).trimEnd()}...`
+            : cleanNarrative || null;
+
+        return {
+          id: row.id,
+          facilityId: row.facilityId,
+          referenceCode: row.referenceCode,
+          patientDisplayName: row.patientDisplayName ?? null,
+          age: row.age ?? null,
+          narrativePreview,
+          inputMode: row.inputMode,
+          transcriptionStatus: row.transcriptionStatus,
+          aiStatus: row.aiStatus,
+          staffReviewStatus: row.staffReviewStatus,
+          staffAssignedPriority: row.staffAssignedPriority,
+          workflowStatus: row.workflowStatus,
+          demoRecord: row.demoRecord,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        };
+      });
 
       return {
         items,
@@ -618,93 +629,144 @@ export function createDrizzleStaffRepository(
       const confirmedNarrativeSha256 = computeSha256Hex(
         input.confirmedNarrative,
       );
-      const referenceCode = generateReferenceCode();
-      const now = new Date();
 
-      const inserted = await db.transaction(async (tx) => {
-        const [newIntake] = await tx
-          .insert(patientIntakes)
-          .values({
-            facilityId: facility.id,
-            referenceCode,
-            idempotencyKey: input.idempotencyKey,
-            demoRecord: facility.isDemo,
-            patientDisplayName: input.patientDisplayName?.trim() || null,
-            age: input.age ?? null,
-            inputMode: input.inputMode,
-            transcriptionStatus:
-              input.inputMode === "voice" ? "succeeded" : "not_applicable",
-            transcriptionModel:
-              input.inputMode === "voice" ? "gemini-3.5-transcribe" : null,
-            transcriptRaw:
-              input.inputMode === "voice"
-                ? input.transcriptRaw?.trim() || input.confirmedNarrative
-                : null,
-            confirmedNarrative: input.confirmedNarrative,
-            confirmedNarrativeSha256,
-            transcriptConfirmedAt: now,
-            aiStatus: "queued",
-            workflowStatus: "new",
-            staffAssignedPriority: "unassigned",
-            staffReviewStatus: "not_reviewed",
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
+      const maxInsertAttempts = 3;
+      for (let attempt = 1; attempt <= maxInsertAttempts; attempt += 1) {
+        const referenceCode = generateReferenceCode();
+        const now = new Date();
 
-        if (!newIntake) {
-          throw new Error("Failed to insert patient intake record.");
-        }
+        try {
+          const inserted = await db.transaction(async (tx) => {
+            const [newIntake] = await tx
+              .insert(patientIntakes)
+              .values({
+                facilityId: facility.id,
+                referenceCode,
+                idempotencyKey: input.idempotencyKey,
+                demoRecord: facility.isDemo,
+                patientDisplayName: input.patientDisplayName?.trim() || null,
+                age: input.age ?? null,
+                inputMode: input.inputMode,
+                transcriptionStatus:
+                  input.inputMode === "voice" ? "succeeded" : "not_applicable",
+                transcriptionModel:
+                  input.inputMode === "voice" ? "gemini-3.5-transcribe" : null,
+                transcriptRaw:
+                  input.inputMode === "voice"
+                    ? input.transcriptRaw?.trim() || input.confirmedNarrative
+                    : null,
+                confirmedNarrative: input.confirmedNarrative,
+                confirmedNarrativeSha256,
+                transcriptConfirmedAt: now,
+                aiStatus: "queued",
+                workflowStatus: "new",
+                staffAssignedPriority: "unassigned",
+                staffReviewStatus: "not_reviewed",
+                createdAt: now,
+                updatedAt: now,
+              })
+              .returning();
 
-        await tx.insert(auditEvents).values({
-          facilityId: facility.id,
-          intakeId: newIntake.id,
-          actorType: "patient",
-          actorUid: null,
-          actorRole: null,
-          actorDisplayName: null,
-          action: "intake_created",
-          fromValue: null,
-          toValue: "new",
-          reason: null,
-          createdAt: now,
-        });
+            if (!newIntake) {
+              throw new Error("Failed to insert patient intake record.");
+            }
 
-        if (newIntake.inputMode === "voice") {
-          await tx.insert(auditEvents).values({
-            facilityId: facility.id,
-            intakeId: newIntake.id,
-            actorType: "patient",
-            actorUid: null,
-            actorRole: null,
-            actorDisplayName: null,
-            action: "transcript_confirmed",
-            fromValue: null,
-            toValue: "confirmed",
-            reason: null,
-            createdAt: new Date(now.getTime() + 1),
+            await tx.insert(auditEvents).values({
+              facilityId: facility.id,
+              intakeId: newIntake.id,
+              actorType: "patient",
+              actorUid: null,
+              actorRole: null,
+              actorDisplayName: null,
+              action: "intake_created",
+              fromValue: null,
+              toValue: "new",
+              reason: null,
+              createdAt: now,
+            });
+
+            if (newIntake.inputMode === "voice") {
+              await tx.insert(auditEvents).values({
+                facilityId: facility.id,
+                intakeId: newIntake.id,
+                actorType: "patient",
+                actorUid: null,
+                actorRole: null,
+                actorDisplayName: null,
+                action: "transcript_confirmed",
+                fromValue: null,
+                toValue: "confirmed",
+                reason: null,
+                createdAt: new Date(now.getTime() + 1),
+              });
+            }
+
+            return newIntake;
           });
+
+          return {
+            ok: true,
+            data: {
+              id: inserted.id,
+              facilityId: inserted.facilityId,
+              facilityPublicCode: facility.publicCode,
+              referenceCode: inserted.referenceCode,
+              inputMode: inserted.inputMode,
+              confirmedNarrative: inserted.confirmedNarrative,
+              age: inserted.age ?? null,
+              workflowStatus: inserted.workflowStatus,
+              aiStatus: inserted.aiStatus,
+              createdAt: inserted.createdAt.toISOString(),
+              deduplicated: false,
+            },
+          };
+        } catch (err) {
+          const meta = extractPgErrorMetadata(err);
+          if (meta.pgCode === "23505") {
+            // Concurrent idempotent retry race: return the already-persisted record.
+            const [racedExisting] = await db
+              .select()
+              .from(patientIntakes)
+              .where(
+                and(
+                  eq(patientIntakes.facilityId, facility.id),
+                  eq(patientIntakes.idempotencyKey, input.idempotencyKey),
+                ),
+              )
+              .limit(1);
+
+            if (racedExisting) {
+              return {
+                ok: true,
+                data: {
+                  id: racedExisting.id,
+                  facilityId: racedExisting.facilityId,
+                  facilityPublicCode: facility.publicCode,
+                  referenceCode: racedExisting.referenceCode,
+                  inputMode: racedExisting.inputMode,
+                  confirmedNarrative: racedExisting.confirmedNarrative,
+                  age: racedExisting.age ?? null,
+                  workflowStatus: racedExisting.workflowStatus,
+                  aiStatus: racedExisting.aiStatus,
+                  createdAt: racedExisting.createdAt.toISOString(),
+                  deduplicated: true,
+                },
+              };
+            }
+
+            // Rare 4-character referenceCode collision: retry with a fresh code.
+            if (
+              meta.constraint === "patient_intakes_facility_ref_uq" &&
+              attempt < maxInsertAttempts
+            ) {
+              continue;
+            }
+          }
+          throw err;
         }
+      }
 
-        return newIntake;
-      });
-
-      return {
-        ok: true,
-        data: {
-          id: inserted.id,
-          facilityId: inserted.facilityId,
-          facilityPublicCode: facility.publicCode,
-          referenceCode: inserted.referenceCode,
-          inputMode: inserted.inputMode,
-          confirmedNarrative: inserted.confirmedNarrative,
-          age: inserted.age ?? null,
-          workflowStatus: inserted.workflowStatus,
-          aiStatus: inserted.aiStatus,
-          createdAt: inserted.createdAt.toISOString(),
-          deduplicated: false,
-        },
-      };
+      throw new Error("Unable to generate a unique intake reference code.");
     },
 
     async findIntakeForExtraction(
@@ -754,15 +816,23 @@ export function createDrizzleStaffRepository(
       const db = resolveDb();
       const now = new Date();
 
+      const clampedModelId =
+        params.aiModelId.trim().slice(0, 80) || "unknown";
+      const clampedSchemaVersion =
+        params.aiSchemaVersion.trim().slice(0, 16) || "1.0";
+      const clampedErrorCode = params.aiErrorCode
+        ? params.aiErrorCode.trim().slice(0, 80)
+        : null;
+
       const updated = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(patientIntakes)
           .set({
             aiStatus: params.aiStatus,
-            aiModelId: params.aiModelId,
-            aiSchemaVersion: params.aiSchemaVersion,
+            aiModelId: clampedModelId,
+            aiSchemaVersion: clampedSchemaVersion,
             aiBrief: params.aiBrief,
-            aiErrorCode: params.aiErrorCode,
+            aiErrorCode: clampedErrorCode,
             updatedAt: now,
           })
           .where(
@@ -790,7 +860,7 @@ export function createDrizzleStaffRepository(
           action: auditAction,
           fromValue: null,
           toValue: params.aiStatus,
-          reason: params.aiErrorCode ?? null,
+          reason: clampedErrorCode,
           createdAt: now,
         });
 

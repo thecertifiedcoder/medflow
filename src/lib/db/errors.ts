@@ -23,15 +23,84 @@ const PG_UNAVAILABLE_CODES = new Set([
   "ETIMEDOUT",
   "ENOTFOUND",
   "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EPIPE",
   "57P01", // admin_shutdown
   "57P02", // crash_shutdown
   "57P03", // cannot_connect_now
+  "57014", // query_canceled / statement_timeout
   "08000", // connection_exception
   "08001", // sqlclient_unable_to_establish_sqlconnection
   "08003", // connection_does_not_exist
   "08006", // connection_failure
+  "08P01", // protocol_violation
+  "28000", // invalid_authorization_specification
+  "28P01", // invalid_password
   "53300", // too_many_connections
 ]);
+
+const DB_UNAVAILABLE_MESSAGE_PATTERNS: readonly RegExp[] = [
+  /DATABASE_URL is not configured/i,
+  /DATABASE_URL must be a valid PostgreSQL/i,
+  /connection terminated unexpectedly/i,
+  /timeout exceeded when trying to connect/i,
+  /connection timed out/i,
+  /socket hang up/i,
+  /getaddrinfo/i,
+  /endpoint is disabled/i,
+  /the server does not support ssl connections/i,
+  /self[- ]signed certificate/i,
+  /unable to verify the first certificate/i,
+  /password authentication failed/i,
+];
+
+export interface PgErrorMetadata {
+  readonly errorName: string;
+  readonly pgCode: string | null;
+  readonly constraint: string | null;
+}
+
+/**
+ * Extracts strictly non-sensitive exception metadata (error class, SQLSTATE /
+ * Node network code, and PostgreSQL constraint name). Never returns raw error
+ * messages, SQL statements, connection URIs, or user/patient payloads.
+ */
+export function extractPgErrorMetadata(error: unknown): PgErrorMetadata {
+  if (!(error instanceof Error)) {
+    return { errorName: typeof error, pgCode: null, constraint: null };
+  }
+
+  const direct = error as {
+    code?: unknown;
+    constraint?: unknown;
+    cause?: unknown;
+  };
+  const cause =
+    direct.cause && typeof direct.cause === "object"
+      ? (direct.cause as { code?: unknown; constraint?: unknown })
+      : null;
+
+  const pgCode =
+    typeof direct.code === "string"
+      ? direct.code
+      : typeof cause?.code === "string"
+        ? cause.code
+        : null;
+
+  const constraint =
+    typeof direct.constraint === "string"
+      ? direct.constraint
+      : typeof cause?.constraint === "string"
+        ? cause.constraint
+        : null;
+
+  return {
+    errorName: error.name || "Error",
+    pgCode,
+    constraint,
+  };
+}
 
 /**
  * Classifies unknown database errors without ever surfacing raw pg error text,
@@ -44,29 +113,58 @@ export function isDatabaseUnavailableError(error: unknown): boolean {
     return true;
   }
 
+  const meta = extractPgErrorMetadata(error);
+  if (meta.pgCode && PG_UNAVAILABLE_CODES.has(meta.pgCode)) {
+    return true;
+  }
+
   if (error instanceof Error) {
-    if (
-      error.message.includes("DATABASE_URL is not configured") ||
-      error.message.includes("DATABASE_URL must be a valid PostgreSQL")
-    ) {
-      return true;
-    }
-
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" && PG_UNAVAILABLE_CODES.has(code)) {
-      return true;
-    }
-
+    const messagesToCheck: string[] = [error.message];
     const cause = (error as { cause?: unknown }).cause;
-    if (cause && typeof cause === "object") {
-      const causeCode = (cause as { code?: unknown }).code;
-      if (typeof causeCode === "string" && PG_UNAVAILABLE_CODES.has(causeCode)) {
+    if (cause instanceof Error && cause.message) {
+      messagesToCheck.push(cause.message);
+    }
+
+    for (const msg of messagesToCheck) {
+      if (DB_UNAVAILABLE_MESSAGE_PATTERNS.some((pattern) => pattern.test(msg))) {
         return true;
       }
     }
   }
 
   return false;
+}
+
+/**
+ * Returns a sanitized server-side diagnostic summary suitable for structured
+ * production logs. Guaranteed free of PHI, credentials, and raw SQL.
+ */
+export function describeSafeServerError(error: unknown): {
+  readonly errorName: string;
+  readonly pgCode: string | null;
+  readonly constraint: string | null;
+  readonly category:
+    | "database_unavailable"
+    | "unique_violation"
+    | "constraint_violation"
+    | "validation_error"
+    | "unexpected_server_error";
+} {
+  const meta = extractPgErrorMetadata(error);
+
+  if (isDatabaseUnavailableError(error)) {
+    return { ...meta, category: "database_unavailable" };
+  }
+  if (meta.pgCode === "23505") {
+    return { ...meta, category: "unique_violation" };
+  }
+  if (meta.pgCode && meta.pgCode.startsWith("23")) {
+    return { ...meta, category: "constraint_violation" };
+  }
+  if (meta.errorName === "ZodError") {
+    return { ...meta, category: "validation_error" };
+  }
+  return { ...meta, category: "unexpected_server_error" };
 }
 
 /**

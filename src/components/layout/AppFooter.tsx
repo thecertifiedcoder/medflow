@@ -8,9 +8,15 @@ export function AppFooter() {
   const pathname = usePathname() ?? "/";
   const isPatientIntake =
     pathname === "/intake" || pathname.startsWith("/intake/");
+  const isStaffWorkspace =
+    pathname === "/staff/queue" ||
+    pathname.startsWith("/staff/queue/") ||
+    pathname === "/staff/admin" ||
+    pathname.startsWith("/staff/admin/") ||
+    pathname.startsWith("/staff/intakes/");
 
-  // Patient intake renders as a focused mobile-first guided application without web chrome.
-  if (isPatientIntake) {
+  // Focused patient intake and authenticated clinical staff routes never render the public marketing footer.
+  if (isPatientIntake || isStaffWorkspace) {
     return null;
   }
 

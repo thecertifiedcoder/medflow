@@ -136,6 +136,7 @@ export const StaffQueueItemSchema = z
     referenceCode: z.string().min(1).max(32),
     patientDisplayName: z.string().max(80).nullable(),
     age: z.number().int().min(0).max(120).nullable(),
+    narrativePreview: z.string().max(200).nullable().optional(),
     inputMode: InputModeSchema,
     transcriptionStatus: TranscriptionStatusSchema,
     aiStatus: AiStatusSchema,

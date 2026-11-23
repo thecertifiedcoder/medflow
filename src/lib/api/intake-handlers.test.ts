@@ -418,3 +418,174 @@ test("POST /api/intakes/[intakeId]/extract allows clinical staff to retry extrac
   const adminBody = (await adminRes.json()) as { error: { code: string } };
   assert.equal(adminBody.error.code, "INSUFFICIENT_STAFF_ROLE");
 });
+
+test("POST /api/intakes rejects invalid payloads with 400 and X-Request-Id correlation header", async () => {
+  const req = new Request("http://localhost:3000/api/intakes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-request-id": "req-invalid-test-01",
+    },
+    body: JSON.stringify({
+      facilityPublicCode: "DEMO-CLINIC-01",
+      idempotencyKey: "short",
+      inputMode: "typed",
+      confirmedNarrative: "hi",
+    }),
+  });
+
+  const res = await handleCreatePatientIntakePost(req, {
+    repository: createMockRepository(),
+  });
+
+  assert.equal(res.status, 400);
+  assert.equal(res.headers.get("X-Request-Id"), "req-invalid-test-01");
+  const body = (await res.json()) as {
+    error: { code: string; requestId?: string };
+  };
+  assert.equal(body.error.code, "INVALID_INTAKE_PAYLOAD");
+  assert.equal(body.error.requestId, "req-invalid-test-01");
+});
+
+test("POST /api/intakes returns 201 and preserves saved record when both Gemini and OpenRouter fail", async () => {
+  let recordedErrorCode: string | null = null;
+  const repo = createMockRepository({
+    async recordIntakeExtractionResult(params) {
+      recordedErrorCode = params.aiErrorCode;
+      return {
+        id: params.intakeId,
+        facilityId: params.facilityId,
+        referenceCode: "MF-1099",
+        confirmedNarrative:
+          "I have had sharp chest tightness for about two hours after walking upstairs.",
+        inputMode: "typed",
+        age: 45,
+        aiStatus: params.aiStatus,
+        aiModelId: params.aiModelId,
+        aiBrief: null,
+        aiErrorCode: params.aiErrorCode,
+        updatedAt: FIXED_NOW.toISOString(),
+      };
+    },
+  });
+
+  const req = new Request("http://localhost:3000/api/intakes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-vercel-id": "iad1::req-both-ai-down",
+    },
+    body: JSON.stringify({
+      facilityPublicCode: "DEMO-CLINIC-01",
+      idempotencyKey: "idem-key-both-ai-down-01",
+      inputMode: "typed",
+      confirmedNarrative:
+        "I have had sharp chest tightness for about two hours after walking upstairs.",
+    }),
+  });
+
+  const res = await handleCreatePatientIntakePost(req, {
+    repository: repo,
+    extractBrief: async () => ({
+      aiStatus: "failed",
+      aiModelId: "openrouter/free",
+      aiSchemaVersion: "1.0",
+      aiBrief: null,
+      aiErrorCode: "OPENROUTER_UPSTREAM_UNAVAILABLE",
+      provider: "openrouter",
+    }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.headers.get("X-Request-Id"), "iad1::req-both-ai-down");
+  assert.equal(recordedErrorCode, "OPENROUTER_UPSTREAM_UNAVAILABLE");
+  const body = (await res.json()) as { intakeId: string; aiStatus: string };
+  assert.equal(body.intakeId, INTAKE_UUID);
+  assert.equal(body.aiStatus, "failed");
+});
+
+test("POST /api/intakes maps Neon connectivity/cold-start failures to 503 DATABASE_UNAVAILABLE with requestId and no secret leakage", async () => {
+  const req = new Request("http://localhost:3000/api/intakes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-request-id": "req-db-503-test",
+    },
+    body: JSON.stringify({
+      facilityPublicCode: "DEMO-CLINIC-01",
+      idempotencyKey: "idem-key-db-503-test-01",
+      inputMode: "typed",
+      confirmedNarrative:
+        "I have had sharp chest tightness for about two hours after walking upstairs.",
+    }),
+  });
+
+  const res = await handleCreatePatientIntakePost(req, {
+    repository: createMockRepository({
+      async createPatientIntake() {
+        const err = new Error(
+          "Connection terminated unexpectedly while connecting to postgresql://secret:pw@ep-test.neon.tech/db",
+        );
+        (err as Error & { code?: string }).code = "ECONNRESET";
+        throw err;
+      },
+    }),
+  });
+
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get("X-Request-Id"), "req-db-503-test");
+  const body = (await res.json()) as {
+    error: { code: string; message: string; requestId?: string };
+  };
+  assert.equal(body.error.code, "DATABASE_UNAVAILABLE");
+  assert.equal(body.error.requestId, "req-db-503-test");
+  assert.equal(body.error.message.includes("postgresql://"), false);
+});
+
+test("POST /api/intakes/[intakeId]/extract allows clinical staff to recover failed AI via OpenRouter fallback", async () => {
+  const nurseReq = new Request(
+    `http://localhost:3000/api/intakes/${INTAKE_UUID}/extract`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer nurse-token",
+        "Content-Type": "application/json",
+        "x-request-id": "req-retry-openrouter-01",
+      },
+      body: JSON.stringify({ facilityId: "demo-clinic-01" }),
+    },
+  );
+
+  const res = await handleExtractIntakeBriefPost(
+    nurseReq,
+    { intakeId: INTAKE_UUID },
+    {
+      verifyToken: verifyNurseToken,
+      repository: createMockRepository(),
+      extractBrief: async () => ({
+        aiStatus: "succeeded",
+        aiModelId: "openrouter:meta-llama/llama-3.3-70b-instruct:free",
+        aiSchemaVersion: "1.0",
+        aiBrief: SAMPLE_BRIEF,
+        aiErrorCode: null,
+        provider: "openrouter",
+      }),
+      now: () => FIXED_NOW,
+    },
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("X-Request-Id"), "req-retry-openrouter-01");
+  const body = (await res.json()) as {
+    aiStatus: string;
+    aiModelId: string;
+    aiBrief: ClinicalIntakeBrief | null;
+  };
+  assert.equal(body.aiStatus, "succeeded");
+  assert.equal(
+    body.aiModelId,
+    "openrouter:meta-llama/llama-3.3-70b-instruct:free",
+  );
+  assert.equal(body.aiBrief?.chiefConcern.value, "Sharp chest tightness");
+});
+

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { BrandMark, Button, ButtonLink, Icon } from "@/components/ui";
-import { CANONICAL_DEMO_FACILITY } from "@/db/invariants";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
 
 export function AppHeader() {
@@ -30,7 +29,6 @@ export function AppHeader() {
     pathname.startsWith("/staff/intakes/");
 
   const isAuthorized = status === "authorized" && activeFacility !== null;
-  const isAdmin = activeFacility?.role === "admin";
 
   // 1. Focused Mobile-First Patient Header (/intake)
   // Calm, minimal, free of staff controls or backend/developer identifiers.
@@ -60,56 +58,64 @@ export function AppHeader() {
     );
   }
 
-  // 2. Authenticated Clinical Staff & Administrator Command Header (/staff/queue, /staff/admin, /staff/intakes/*)
+  // 2. Compact Clinical Staff Header (/staff/queue, /staff/admin, /staff/intakes/*)
   if (isStaffWorkspaceRoute) {
+    const roleLabel =
+      activeFacility?.role === "admin"
+        ? "Admin"
+        : activeFacility?.role === "doctor"
+          ? "Doctor"
+          : "Nurse";
+    const workspaceTitle = pathname.startsWith("/staff/admin")
+      ? "Facility Admin"
+      : "Clinical Workspace";
+
     return (
       <header
-        className="mf-dash__top flex-wrap justify-between gap-2.5 px-4 py-2.5 sm:px-6"
+        className="mf-dash__top h-14 justify-between gap-2 px-4 sm:px-6"
         data-testid="workspace-top-bar"
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           <Link
-            href="/"
-            className="no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-primary-light)]"
+            href="/staff/queue"
+            className="shrink-0 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-focus-on-dark)]"
           >
-            <BrandMark
-              onDark
-              subtitle={
-                isAdmin
-                  ? "Facility Administration & Clinical Workspace"
-                  : "Clinical Staff Workspace"
-              }
-            />
+            <BrandMark onDark size="sm" />
           </Link>
 
-          <span className="mf-chip mf-chip--on-dark hidden sm:inline-flex">
-            <Icon name="clipboard" size="sm" />
-            Facility:{" "}
-            <strong className="mf-mono">
-              {activeFacility?.facilityPublicCode ??
-                CANONICAL_DEMO_FACILITY.publicCode}
-            </strong>
+          <span
+            aria-hidden="true"
+            className="hidden h-4 w-px bg-[var(--mf-navy-700)] sm:inline-block"
+          />
+
+          <span className="hidden truncate text-[13.5px] font-medium text-[var(--mf-navy-text)] sm:inline">
+            {workspaceTitle}
           </span>
+
+          {isAuthorized && authMode === "demo" && (
+            <span
+              className="inline-flex shrink-0 items-center rounded-[4px] border border-[var(--mf-primary-light)]/40 bg-[var(--mf-navy-800)] px-2 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--mf-primary-light)] uppercase"
+              data-testid="workspace-demo-indicator"
+            >
+              Demo
+            </span>
+          )}
         </div>
 
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
           {isAuthorized && staffProfile && activeFacility ? (
             <>
               <span
-                className="mf-chip mf-chip--on-dark max-w-full truncate"
+                className="hidden max-w-[240px] truncate text-[13px] text-[var(--mf-navy-text)] md:inline"
                 data-testid="active-session-chip"
               >
-                <Icon
-                  name={authMode === "demo" ? "shield" : "userCheck"}
-                  size="sm"
-                />
-                <span className="truncate">
-                  {authMode === "demo"
-                    ? demoPersona === "admin"
-                      ? "Demo Admin"
-                      : "Demo Staff"
-                    : staffProfile.displayName}{" "}
-                  · <span className="uppercase">{activeFacility.role}</span>
+                {authMode === "demo"
+                  ? demoPersona === "admin"
+                    ? "Demo Admin"
+                    : "Demo Staff"
+                  : staffProfile.displayName}{" "}
+                <span className="text-[var(--mf-navy-text-muted)]">
+                  · {roleLabel}
                 </span>
               </span>
 
@@ -123,13 +129,11 @@ export function AppHeader() {
               </Button>
             </>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               <ButtonLink href="/demo" variant="onDark" size="sm">
-                <Icon name="shield" size="sm" />
-                Hackathon Demo
+                Demo
               </ButtonLink>
               <ButtonLink href="/staff/login" variant="onDark" size="sm">
-                <Icon name="lock" size="sm" />
                 Staff Sign-In
               </ButtonLink>
             </div>

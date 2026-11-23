@@ -377,7 +377,7 @@ export function PatientIntakeFlow() {
       <aside
         role="alert"
         data-testid="intake-safety-banner"
-        className="flex items-start gap-2.5 rounded-[8px] border border-[var(--mf-danger)]/40 border-l-4 border-l-[var(--mf-danger)] bg-[var(--mf-danger-tint)] px-3.5 py-2.5 text-[13px] leading-[1.4] text-[var(--mf-text)]"
+        className="flex items-start gap-2.5 rounded-[8px] border border-[var(--mf-danger)]/40 border-l-4 border-l-[var(--mf-danger)] bg-[var(--mf-danger-tint)] px-3.5 py-2.5 text-[13px] leading-[1.42] text-[var(--mf-text)]"
       >
         <Icon
           name="alert"
@@ -388,7 +388,11 @@ export function PatientIntakeFlow() {
           <strong className="font-semibold text-[var(--mf-danger-dark)]">
             Need urgent medical help?
           </strong>{" "}
-          Please alert clinic staff directly. Do not wait to complete this form.
+          Do not wait to complete this form—alert clinic staff immediately if you experience{" "}
+          <span className="font-semibold text-[var(--mf-danger-dark)]">
+            severe chest pain, difficulty breathing, heavy bleeding, sudden weakness, or feeling faint
+          </span>
+          .
         </p>
       </aside>
 

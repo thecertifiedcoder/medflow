@@ -7,6 +7,7 @@ export interface ServerConfig {
   readonly maxAudioUploadBytes: number;
   readonly maxAudioDurationSeconds: number;
   readonly hasGeminiApiKey: boolean;
+  readonly hasOpenRouterApiKey: boolean;
   readonly hasDatabaseUrl: boolean;
   readonly hasDatabaseUrlUnpooled: boolean;
   readonly demoModeEnabled: boolean;
@@ -189,12 +190,26 @@ export function getDemoSessionSecret(
   return env.MEDFLOW_DEMO_SESSION_SECRET!.trim();
 }
 
+/**
+ * Returns the optional server-only OpenRouter API key for automatic text-only
+ * fallback extraction when Gemini is unavailable. Never throws if unset and
+ * must never be exposed to client code or logs.
+ */
+export function getOpenRouterApiKey(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  assertServerRuntime();
+  const key = env.OPENROUTER_API_KEY?.trim();
+  return key && key.length > 0 ? key : null;
+}
+
 export function getServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
   assertServerRuntime();
 
   const geminiKey = env.GEMINI_API_KEY?.trim();
+  const openRouterKey = env.OPENROUTER_API_KEY?.trim();
   const databaseUrl = env.DATABASE_URL?.trim();
   const databaseUrlUnpooled = env.DATABASE_URL_UNPOOLED?.trim();
 
@@ -230,6 +245,7 @@ export function getServerConfig(
       DEFAULT_MAX_AUDIO_SECONDS,
     ),
     hasGeminiApiKey: Boolean(geminiKey && geminiKey.length > 0),
+    hasOpenRouterApiKey: Boolean(openRouterKey && openRouterKey.length > 0),
     hasDatabaseUrl: Boolean(databaseUrl && isPostgresUrl(databaseUrl)),
     hasDatabaseUrlUnpooled: Boolean(
       databaseUrlUnpooled && isPostgresUrl(databaseUrlUnpooled),

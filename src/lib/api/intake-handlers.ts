@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { DemoSessionRevocationStore } from "@/lib/auth/demo-session";
@@ -6,7 +7,10 @@ import {
   StaffAuthorizationError,
   type VerifyTokenFn,
 } from "@/lib/auth/staff-authorization";
-import { toSafeDatabaseError } from "@/lib/db/errors";
+import {
+  describeSafeServerError,
+  toSafeDatabaseError,
+} from "@/lib/db/errors";
 import {
   createDrizzleStaffRepository,
   type StaffRepository,
@@ -42,10 +46,6 @@ const ExtractIntakeRequestBodySchema = z
 
 const CLINICAL_EXTRACTION_ROLES: readonly StaffRole[] = ["nurse", "doctor"];
 
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store",
-} as const;
-
 export interface IntakeApiHandlerDependencies {
   readonly repository?: StaffRepository;
   readonly verifyToken?: VerifyTokenFn;
@@ -56,6 +56,7 @@ export interface IntakeApiHandlerDependencies {
     confirmedNarrative: string;
     inputMode: "typed" | "voice";
     age?: number | null;
+    requestId?: string;
   }) => Promise<GeminiExtractionOutcome>;
   readonly transcribeAudio?: (params: {
     audioBase64: string;
@@ -63,18 +64,70 @@ export interface IntakeApiHandlerDependencies {
   }) => Promise<GeminiTranscriptionOutcome>;
 }
 
+function resolveRequestId(request: Request): string {
+  const vercelId = request.headers.get("x-vercel-id")?.trim();
+  if (vercelId && vercelId.length > 0) {
+    return vercelId.slice(0, 64);
+  }
+  const existing = request.headers.get("x-request-id")?.trim();
+  if (existing && existing.length > 0) {
+    return existing.slice(0, 64);
+  }
+  return randomUUID();
+}
+
+function buildResponseHeaders(requestId: string): Record<string, string> {
+  return {
+    "Cache-Control": "no-store",
+    "X-Request-Id": requestId,
+  };
+}
+
+function logIntakeDiagnostic(payload: {
+  readonly level: "info" | "warn" | "error";
+  readonly route: string;
+  readonly stage: string;
+  readonly requestId: string;
+  readonly durationMs: number;
+  readonly httpStatus?: number;
+  readonly aiStatus?: string;
+  readonly aiModelId?: string | null;
+  readonly errorCategory?: string;
+  readonly errorName?: string;
+  readonly pgCode?: string | null;
+  readonly constraint?: string | null;
+}): void {
+  // Structured non-PHI operational telemetry only.
+  // Never logs patient name, narrative, transcript, secrets, or SQL text.
+  const line = JSON.stringify({
+    scope: "medflow.api.intakes",
+    ...payload,
+  });
+  if (payload.level === "error") {
+    console.error(line);
+  } else if (payload.level === "warn") {
+    console.warn(line);
+  } else {
+    console.info(line);
+  }
+}
+
 /**
  * POST /api/intakes
  * Public patient intake submission endpoint.
  * Persists the patient-confirmed intake first in Neon PostgreSQL, then runs
- * server-side Gemini extraction without ever blocking or losing the intake
- * if AI extraction fails.
+ * server-side AI extraction (Gemini primary -> Gemini fallback -> OpenRouter
+ * free-model fallback) without ever blocking, failing, or losing the persisted
+ * intake if AI extraction fails.
  */
 export async function handleCreatePatientIntakePost(
   request: Request,
   deps: IntakeApiHandlerDependencies = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
+  const startedAt = Date.now();
+  const requestId = resolveRequestId(request);
+  let currentStage = "parse_body";
 
   let rawBody: unknown;
   try {
@@ -84,9 +137,11 @@ export async function handleCreatePatientIntakePost(
       400,
       "INVALID_JSON_BODY",
       "Request body must be valid JSON.",
+      { requestId },
     );
   }
 
+  currentStage = "validate_payload";
   const parsed = CreateIntakeRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     const firstIssue = parsed.error.issues[0];
@@ -94,6 +149,7 @@ export async function handleCreatePatientIntakePost(
       400,
       "INVALID_INTAKE_PAYLOAD",
       firstIssue?.message ?? "Invalid patient intake payload.",
+      { requestId },
     );
   }
 
@@ -105,33 +161,41 @@ export async function handleCreatePatientIntakePost(
       503,
       "DATABASE_UNAVAILABLE",
       "Patient intake repository is unavailable.",
+      { requestId },
     );
   }
 
   try {
+    currentStage = "persist_intake";
     const createdResult = await repository.createPatientIntake(parsed.data);
     if (!createdResult.ok) {
       return jsonError(
         createdResult.status,
         createdResult.code,
         createdResult.message,
+        { requestId },
       );
     }
 
     const created = createdResult.data;
     let finalAiStatus = created.aiStatus;
+    let finalAiModelId: string | null = null;
 
     if (
       (!created.deduplicated || created.aiStatus === "queued") &&
       repository.recordIntakeExtractionResult
     ) {
+      currentStage = "extract_brief";
       try {
         const outcome = await extractBrief({
           confirmedNarrative: created.confirmedNarrative,
           inputMode: created.inputMode,
           age: created.age,
+          requestId,
         });
+        finalAiModelId = outcome.aiModelId;
 
+        currentStage = "record_extraction";
         const updated = await repository.recordIntakeExtractionResult({
           intakeId: created.id,
           facilityId: created.facilityId,
@@ -144,9 +208,24 @@ export async function handleCreatePatientIntakePost(
 
         if (updated) {
           finalAiStatus = updated.aiStatus;
+        } else {
+          finalAiStatus = outcome.aiStatus;
         }
-      } catch {
-        // Never lose or fail the persisted patient intake if AI extraction fails
+      } catch (aiErr) {
+        // Critical invariant: AI failure must NEVER fail or lose a persisted intake.
+        const safeErr = describeSafeServerError(aiErr);
+        logIntakeDiagnostic({
+          level: "warn",
+          route: "POST /api/intakes",
+          stage: currentStage,
+          requestId,
+          durationMs: Date.now() - startedAt,
+          errorCategory: safeErr.category,
+          errorName: safeErr.errorName,
+          pgCode: safeErr.pgCode,
+          constraint: safeErr.constraint,
+        });
+
         try {
           const fallbackUpdated = await repository.recordIntakeExtractionResult({
             intakeId: created.id,
@@ -155,17 +234,28 @@ export async function handleCreatePatientIntakePost(
             aiModelId: "gemini-4-hydrogen",
             aiSchemaVersion: "1.0",
             aiBrief: null,
-            aiErrorCode: "GEMINI_UNEXPECTED_ERROR",
+            aiErrorCode: "AI_EXTRACTION_UNEXPECTED_ERROR",
           });
-          if (fallbackUpdated) {
-            finalAiStatus = fallbackUpdated.aiStatus;
-          }
-        } catch {
-          finalAiStatus = created.aiStatus;
+          finalAiStatus = fallbackUpdated ? fallbackUpdated.aiStatus : "failed";
+        } catch (recordFailErr) {
+          const safeRecordErr = describeSafeServerError(recordFailErr);
+          logIntakeDiagnostic({
+            level: "warn",
+            route: "POST /api/intakes",
+            stage: "record_extraction_failure",
+            requestId,
+            durationMs: Date.now() - startedAt,
+            errorCategory: safeRecordErr.category,
+            errorName: safeRecordErr.errorName,
+            pgCode: safeRecordErr.pgCode,
+            constraint: safeRecordErr.constraint,
+          });
+          finalAiStatus = "failed";
         }
       }
     }
 
+    currentStage = "serialize_response";
     const payload = CreateIntakeResponseSchema.parse({
       intakeId: created.id,
       referenceCode: created.referenceCode,
@@ -176,13 +266,42 @@ export async function handleCreatePatientIntakePost(
       deduplicated: created.deduplicated,
     });
 
+    const httpStatus = created.deduplicated ? 200 : 201;
+    logIntakeDiagnostic({
+      level: "info",
+      route: "POST /api/intakes",
+      stage: "completed",
+      requestId,
+      durationMs: Date.now() - startedAt,
+      httpStatus,
+      aiStatus: finalAiStatus,
+      aiModelId: finalAiModelId,
+    });
+
     return NextResponse.json(payload, {
-      status: created.deduplicated ? 200 : 201,
-      headers: NO_STORE_HEADERS,
+      status: httpStatus,
+      headers: buildResponseHeaders(requestId),
     });
   } catch (error) {
     const safeDb = toSafeDatabaseError(error);
-    return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message);
+    const diag = describeSafeServerError(error);
+
+    logIntakeDiagnostic({
+      level: "error",
+      route: "POST /api/intakes",
+      stage: currentStage,
+      requestId,
+      durationMs: Date.now() - startedAt,
+      httpStatus: safeDb.statusCode,
+      errorCategory: diag.category,
+      errorName: diag.errorName,
+      pgCode: diag.pgCode,
+      constraint: diag.constraint,
+    });
+
+    return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message, {
+      requestId,
+    });
   }
 }
 
@@ -195,6 +314,7 @@ export async function handleTranscribePatientAudioPost(
   deps: IntakeApiHandlerDependencies = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
+  const requestId = resolveRequestId(request);
 
   let rawBody: unknown;
   try {
@@ -204,6 +324,7 @@ export async function handleTranscribePatientAudioPost(
       400,
       "INVALID_JSON_BODY",
       "Request body must be valid JSON.",
+      { requestId },
     );
   }
 
@@ -214,6 +335,7 @@ export async function handleTranscribePatientAudioPost(
       400,
       "INVALID_TRANSCRIBE_PAYLOAD",
       firstIssue?.message ?? "Invalid audio transcription request.",
+      { requestId },
     );
   }
 
@@ -232,7 +354,7 @@ export async function handleTranscribePatientAudioPost(
 
     return NextResponse.json(payload, {
       status: 200,
-      headers: NO_STORE_HEADERS,
+      headers: buildResponseHeaders(requestId),
     });
   } catch (err) {
     const message =
@@ -245,14 +367,14 @@ export async function handleTranscribePatientAudioPost(
       message.includes("empty")
         ? 400
         : 502;
-    return jsonError(status, "TRANSCRIPTION_FAILED", message);
+    return jsonError(status, "TRANSCRIPTION_FAILED", message, { requestId });
   }
 }
 
 /**
  * POST /api/intakes/[intakeId]/extract
  * Authenticated clinical staff endpoint to trigger or retry server-side
- * Gemini structured extraction on an existing patient intake.
+ * structured extraction (Gemini -> OpenRouter fallback) on an existing intake.
  */
 export async function handleExtractIntakeBriefPost(
   request: Request,
@@ -260,6 +382,9 @@ export async function handleExtractIntakeBriefPost(
   deps: IntakeApiHandlerDependencies = {},
 ): Promise<NextResponse> {
   assertServerRuntime();
+  const startedAt = Date.now();
+  const requestId = resolveRequestId(request);
+  let currentStage = "validate_params";
 
   const parsedId = IntakeIdParamSchema.safeParse(params.intakeId);
   if (!parsedId.success) {
@@ -267,6 +392,7 @@ export async function handleExtractIntakeBriefPost(
       400,
       "INVALID_INTAKE_ID",
       "Intake ID must be a valid UUID.",
+      { requestId },
     );
   }
 
@@ -289,6 +415,7 @@ export async function handleExtractIntakeBriefPost(
   const extractBrief = deps.extractBrief ?? extractClinicalIntakeBrief;
 
   try {
+    currentStage = "authorize_staff";
     const authSession = await requireAuthorizedStaff({
       authorizationHeader: request.headers.get("authorization"),
       cookieHeader: request.headers.get("cookie"),
@@ -310,9 +437,11 @@ export async function handleExtractIntakeBriefPost(
         503,
         "DATABASE_UNAVAILABLE",
         "Extraction persistence repository is unavailable.",
+        { requestId },
       );
     }
 
+    currentStage = "load_intake";
     const intake = await repository.findIntakeForExtraction(
       parsedId.data,
       authSession.activeFacility.facilityId,
@@ -323,15 +452,40 @@ export async function handleExtractIntakeBriefPost(
         404,
         "INTAKE_NOT_FOUND",
         "Requested patient intake was not found in this facility.",
+        { requestId },
       );
     }
 
-    const outcome = await extractBrief({
-      confirmedNarrative: intake.confirmedNarrative,
-      inputMode: intake.inputMode,
-      age: intake.age,
-    });
+    currentStage = "extract_brief";
+    let outcome: GeminiExtractionOutcome;
+    try {
+      outcome = await extractBrief({
+        confirmedNarrative: intake.confirmedNarrative,
+        inputMode: intake.inputMode,
+        age: intake.age,
+        requestId,
+      });
+    } catch (aiErr) {
+      const safeErr = describeSafeServerError(aiErr);
+      logIntakeDiagnostic({
+        level: "warn",
+        route: "POST /api/intakes/[intakeId]/extract",
+        stage: currentStage,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        errorCategory: safeErr.category,
+        errorName: safeErr.errorName,
+      });
+      outcome = {
+        aiStatus: "failed",
+        aiModelId: "gemini-4-hydrogen",
+        aiSchemaVersion: "1.0",
+        aiBrief: null,
+        aiErrorCode: "AI_EXTRACTION_UNEXPECTED_ERROR",
+      };
+    }
 
+    currentStage = "record_extraction";
     const updated = await repository.recordIntakeExtractionResult({
       intakeId: intake.id,
       facilityId: authSession.activeFacility.facilityId,
@@ -347,9 +501,11 @@ export async function handleExtractIntakeBriefPost(
         404,
         "INTAKE_NOT_FOUND",
         "Requested patient intake was not found after extraction.",
+        { requestId },
       );
     }
 
+    currentStage = "serialize_response";
     const payload = IntakeExtractionResponseSchema.parse({
       intakeId: updated.id,
       referenceCode: updated.referenceCode,
@@ -360,15 +516,45 @@ export async function handleExtractIntakeBriefPost(
       updatedAt: updated.updatedAt,
     });
 
+    logIntakeDiagnostic({
+      level: "info",
+      route: "POST /api/intakes/[intakeId]/extract",
+      stage: "completed",
+      requestId,
+      durationMs: Date.now() - startedAt,
+      httpStatus: 200,
+      aiStatus: updated.aiStatus,
+      aiModelId: updated.aiModelId,
+    });
+
     return NextResponse.json(payload, {
       status: 200,
-      headers: NO_STORE_HEADERS,
+      headers: buildResponseHeaders(requestId),
     });
   } catch (error) {
     if (error instanceof StaffAuthorizationError) {
-      return jsonError(error.statusCode, error.errorCode, error.message);
+      return jsonError(error.statusCode, error.errorCode, error.message, {
+        requestId,
+      });
     }
     const safeDb = toSafeDatabaseError(error);
-    return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message);
+    const diag = describeSafeServerError(error);
+
+    logIntakeDiagnostic({
+      level: "error",
+      route: "POST /api/intakes/[intakeId]/extract",
+      stage: currentStage,
+      requestId,
+      durationMs: Date.now() - startedAt,
+      httpStatus: safeDb.statusCode,
+      errorCategory: diag.category,
+      errorName: diag.errorName,
+      pgCode: diag.pgCode,
+      constraint: diag.constraint,
+    });
+
+    return jsonError(safeDb.statusCode, safeDb.errorCode, safeDb.message, {
+      requestId,
+    });
   }
 }

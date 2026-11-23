@@ -7,6 +7,7 @@ import {
   getDemoModeConfig,
   getDemoSessionSecret,
   getMigrationDatabaseUrl,
+  getOpenRouterApiKey,
   getServerConfig,
 } from "./server";
 
@@ -171,4 +172,22 @@ test("getDemoModeConfig is disabled by default and fails closed when secret or T
   assert.equal(srv.demoModeReady, true);
   assert.equal("demoSessionSecret" in srv, false);
 });
+
+test("getOpenRouterApiKey and getServerConfig treat OPENROUTER_API_KEY as optional and server-only", () => {
+  assert.equal(getOpenRouterApiKey({}), null);
+  assert.equal(getOpenRouterApiKey({ OPENROUTER_API_KEY: "   " }), null);
+  assert.equal(
+    getOpenRouterApiKey({ OPENROUTER_API_KEY: "  sk-or-test-key  " }),
+    "sk-or-test-key",
+  );
+
+  const withoutKey = getServerConfig({});
+  assert.equal(withoutKey.hasOpenRouterApiKey, false);
+  assert.equal("openRouterApiKey" in withoutKey, false);
+
+  const withKey = getServerConfig({ OPENROUTER_API_KEY: "sk-or-test-key" });
+  assert.equal(withKey.hasOpenRouterApiKey, true);
+  assert.equal("openRouterApiKey" in withKey, false);
+});
+
 

@@ -22,6 +22,7 @@ function buildPoolConfig(connectionString: string): PoolConfig {
     max: 5,
     idleTimeoutMillis: 20_000,
     connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: true,
     // Neon PostgreSQL requires TLS; keep certificate verification enabled for remote hosts.
     ssl: isLocalhost ? undefined : { rejectUnauthorized: true },
   };
@@ -38,6 +39,21 @@ export function getDb(): MedFlowDatabase {
   if (!globalForDb.medflowDb) {
     const connectionString = getDatabaseUrl();
     const pool = new Pool(buildPoolConfig(connectionString));
+    // Prevent unhandled idle-client disconnect events (common with Neon scale-to-zero
+    // in serverless environments) from crashing the Node.js runtime.
+    pool.on("error", (err) => {
+      const pgCodeRaw = (err as Error & { code?: unknown }).code;
+      const code = typeof pgCodeRaw === "string" ? pgCodeRaw : null;
+      console.error(
+        JSON.stringify({
+          level: "error",
+          scope: "medflow.db",
+          event: "pg_pool_idle_client_error",
+          errorName: err.name || "Error",
+          pgCode: code,
+        }),
+      );
+    });
     globalForDb.medflowPgPool = pool;
     globalForDb.medflowDb = drizzle(pool, { schema });
   }

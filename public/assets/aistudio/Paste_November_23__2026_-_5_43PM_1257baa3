@@ -1,0 +1,1190 @@
+# MedFlow — Production Stabilization, AI Reliability and Clinical Workspace Redesign
+
+## Founder authorization
+
+You are authorized to work on the existing MedFlow repository to resolve three release-blocking problems:
+
+1. Production patient intake submissions return HTTP 500 on Vercel.
+2. Gemini clinical extraction is intermittently failing, leaving patient records without AI-generated briefs.
+3. The clinical staff queue and intake-detail pages are too complicated, technical and difficult to understand.
+
+This is a submission-readiness task. Prioritize working software, predictable failure handling and a simple clinical demonstration.
+
+Do not start Milestone 3. Do not rebuild the product. Do not introduce unrelated features.
+
+Work in the following order:
+
+**Phase A: Diagnose and fix production HTTP 500.**
+
+**Phase B: Stabilize Gemini and add OpenRouter free-model fallback.**
+
+**Phase C: Simplify the clinical queue and intake-detail UI.**
+
+**Phase D: Verify the entire application on a deployed Vercel environment.**
+
+Do not declare completion based solely on a successful local development build.
+
+---
+
+# 1. PROJECT CONTEXT AND EXISTING ARCHITECTURE
+
+MedFlow is a synthetic hackathon demonstration of AI-assisted patient intake and clinical workflow management.
+
+Existing architecture:
+
+- Next.js App Router and TypeScript.
+- Firebase Authentication for normal staff sign-in.
+- Neon PostgreSQL as the application database.
+- Drizzle ORM.
+- Gemini for voice transcription and clinical information extraction.
+- Server-side authorization and role-based access.
+- Existing append-only audit history.
+- A dedicated synthetic demo facility.
+- A separate patient intake experience and clinical staff workspace.
+
+Relevant existing routes include:
+
+- `/`
+- `/intake`
+- `/demo`
+- `/staff/queue`
+- `/staff/intakes/[intakeId]`
+- `/staff/admin`
+- `/staff/login`
+
+Important API endpoints:
+
+- `POST /api/intakes`
+- `POST /api/intakes/transcribe`
+- `POST /api/intakes/[intakeId]/extract`
+- Existing `/api/staff/*` endpoints.
+- Existing `/api/demo/*` endpoints.
+
+The current application already implements:
+
+- Patient narrative persistence.
+- Patient confirmation.
+- SHA-256 narrative integrity.
+- AI extraction and validation.
+- Evidence quote grounding.
+- Human staff review.
+- Staff-controlled priority.
+- Workflow status transitions.
+- Audit event history.
+- Demo sessions and role separation.
+
+Preserve these features.
+
+The latest verification baseline was 82 passing tests, successful typecheck and production build, and lint passing with one existing warning. Treat this as the baseline.
+
+---
+
+# PHASE A — FIX THE PRODUCTION HTTP 500
+
+## 2. Understand the actual failure before editing
+
+On the deployed Vercel application, submitting a patient intake produces:
+
+`POST /api/intakes → HTTP 500 Internal Server Error`
+
+The browser console reports:
+
+`Failed to load resource: the server responded with a status of 500`
+
+This is a server-side failure. The browser message is not the underlying exception.
+
+Do not assume that Gemini is responsible for this HTTP 500.
+
+The application also has a separate AI extraction failure, which must be diagnosed independently.
+
+### Required investigation
+
+Inspect:
+
+- The actual `POST /api/intakes` route handler.
+- The intake handler and repository functions.
+- Database client initialization.
+- Neon connection configuration.
+- Environment validation.
+- Gemini service initialization.
+- The database schema and transaction boundaries.
+- Error handling and response serialization.
+- Any code that assumes an AI response exists.
+- Vercel production runtime compatibility.
+- Vercel-specific environment configuration.
+
+Trace the complete request:
+
+Browser submission → API request → request validation → database connection → intake insert → initial audit event → AI extraction → extraction update → response.
+
+Identify exactly where production execution fails.
+
+### Production logs
+
+Use actual production function logs if available.
+
+Find the error corresponding to `POST /api/intakes`, including:
+
+- Exception class.
+- Error code.
+- Failure stage.
+- Stack trace.
+- Vercel request or execution ID.
+- Relevant deployment.
+
+Do not log the patient's name, confirmed narrative, transcript, API keys, database credentials or other sensitive values.
+
+If you cannot access Vercel production logs, state that limitation honestly.
+
+Do not invent a production root cause.
+
+Instead:
+
+1. Add safe, structured server-side diagnostics with a request ID.
+2. Identify the exact production environment variables required by the code.
+3. Produce a clear Vercel verification checklist.
+4. Make it possible to connect the request ID to server logs.
+5. Continue fixing every defect that can be established from the repository.
+
+## 3. Inspect production environment configuration
+
+Inspect the actual environment schema and determine every required production variable.
+
+At minimum, investigate the current configuration for:
+
+- `DATABASE_URL`
+- `GEMINI_API_KEY`
+- Firebase server-side authentication configuration.
+- Demo session configuration.
+- Any existing runtime or application environment variables.
+- Any additional variables the intake route actually depends on.
+
+Do not invent environment variable names. Use the repository's actual configuration schema.
+
+Verify that required variables are configured for the correct Vercel environments:
+
+- Production
+- Preview, where needed
+
+Check for:
+
+- Missing variables.
+- Incorrect variable names.
+- Variables configured only for Development.
+- Empty or malformed values.
+- Database URLs that cannot connect from the production runtime.
+- Secrets mistakenly configured with inappropriate `NEXT_PUBLIC_` prefixes.
+- Runtime-specific initialization failures.
+
+Never print secret values.
+
+Report variable presence as configured/missing without exposing values.
+
+A change to Vercel environment variables must be followed by a new deployment before the updated values take effect.
+
+## 4. Fix the underlying intake submission failure
+
+The intake submission route must have predictable behaviour.
+
+Use these response expectations:
+
+| Situation | Expected behaviour |
+|---|---|
+| Invalid patient input | HTTP 400 with clear validation response |
+| Successful database persistence and successful AI extraction | HTTP 201 |
+| Successful database persistence but AI extraction failure | HTTP 201, record preserved, AI status failed |
+| Database unavailable | Appropriate server error, no false success |
+| Unexpected server failure | Sanitized error response with request ID |
+
+**Critical requirement: AI availability must not determine whether the patient's original statement can be saved.**
+
+The patient narrative must be persisted and its initial audit event recorded before the AI extraction result is considered successful.
+
+When Gemini and the fallback provider are both unavailable:
+
+- Preserve the original intake.
+- Preserve confirmed narrative.
+- Preserve transcript information.
+- Preserve the narrative integrity hash.
+- Record AI failure through the existing audit mechanism.
+- Leave the record visible in the staff queue.
+- Display an AI-unavailable state to clinical staff.
+- Allow staff to retry extraction later.
+
+Do not report a successful submission if database persistence failed.
+
+Do not silently swallow a database error and return a fake success.
+
+Ensure idempotency continues to prevent duplicate records when the browser retries a submission after a network timeout.
+
+### Vercel compatibility
+
+Check whether the route and its dependencies run correctly in the Vercel Node.js environment.
+
+Verify:
+
+- PostgreSQL connections.
+- Firebase Admin initialization.
+- Environment access.
+- Request/response handling.
+- API timeouts.
+- Model request timeouts.
+- Runtime configuration.
+
+Do not introduce Edge runtime incompatibilities for dependencies that require Node.js.
+
+Avoid redesigning the data architecture. Fix the concrete deployment issue.
+
+---
+
+# PHASE B — STABILIZE AI EXTRACTION
+
+## 5. First investigate why Gemini is failing
+
+The latest clinical intake screenshot shows:
+
+`GEMINI_UPSTREAM_UNAVAILABLE`
+
+The staff interface displays an AI extraction unavailable warning and a retry button.
+
+Earlier implementation reports described Gemini models:
+
+- `gemini-4-hydrogen`
+- `gemini-3.1-flash-lite`
+- `gemini-3.5-transcribe`
+
+Inspect the current code. Do not assume the previous implementation report exactly matches the latest repository state.
+
+Investigate:
+
+- Whether the Gemini API key is present in production.
+- Whether API requests authenticate correctly.
+- Whether the configured extraction model is still available to the account.
+- Whether the project has quota or rate-limit problems.
+- Whether the API returns 429, 503 or another upstream failure.
+- Whether the response format matches the existing schema.
+- Whether the server is timing out.
+- Whether fallback logic actually executes.
+- Whether the model's returned output is rejected by validation.
+- Whether the application handles missing or malformed response content.
+
+Distinguish upstream provider errors from local parsing errors and database errors.
+
+Fix any confirmed Gemini configuration or implementation defect first.
+
+Keep the existing Gemini provider as the primary extraction provider.
+
+## 6. Add OpenRouter as the automatic fallback
+
+If Gemini remains unavailable after the existing Gemini fallback attempt, use OpenRouter's free-model router.
+
+Do not force the founder to manually retry with another provider.
+
+The desired provider flow is:
+
+1. Primary Gemini extraction.
+2. Existing Gemini fallback model, where applicable.
+3. OpenRouter free-model fallback.
+4. If all providers fail, persist the intake and mark extraction failed.
+
+Use OpenRouter's dynamic free-model router:
+
+`openrouter/free`
+
+Do not hardcode an outdated free model ID.
+
+The router should select an available free model compatible with the requested capabilities.
+
+### OpenRouter configuration
+
+Use the OpenAI-compatible chat completions endpoint:
+
+`https://openrouter.ai/api/v1/chat/completions`
+
+Authenticate using a server-side environment variable:
+
+`OPENROUTER_API_KEY`
+
+Use the model:
+
+`openrouter/free`
+
+Optional application attribution headers may be configured, but are not mandatory.
+
+Never expose the OpenRouter API key in:
+
+- Client-side JavaScript.
+- Browser responses.
+- `NEXT_PUBLIC_` variables.
+- Source code.
+- Git commits.
+- Logs.
+- Error messages.
+
+Use the existing HTTP client or OpenAI-compatible client if already installed. Do not add unnecessary packages.
+
+### Environment setup
+
+Add `OPENROUTER_API_KEY` to the server-side environment schema as an optional variable.
+
+The application must continue operating if this key is missing.
+
+If Gemini fails and the OpenRouter key is absent, use the existing safe AI failure behaviour.
+
+Do not introduce a fake API key or embedded demonstration credential.
+
+Update `.env.example` with the variable name and a placeholder only.
+
+Tell the founder explicitly that the actual key must be added in Vercel Project Settings → Environment Variables for the Production environment, and that a new production deployment is required afterwards.
+
+Do not ask the founder to paste the API key into chat or commit it to GitHub.
+
+## 7. Preserve the existing extraction contract
+
+OpenRouter must produce the same structured extraction contract that Gemini currently produces.
+
+Inspect and reuse the existing Zod schema and extraction specifications.
+
+Do not create a second, incompatible clinical brief format.
+
+The output must preserve the existing fields, including:
+
+- `chiefConcern`
+- `symptoms`
+- `relevantContext`
+- `reportedDetailsToReview`
+- `missingOrUnclear`
+- `clinicianSummary`
+- `limitations`
+
+Use the existing approved schema exactly as defined in the repository.
+
+The extraction must remain informational and non-diagnostic.
+
+The model must not produce:
+
+- Diagnoses.
+- Prescriptions.
+- Treatment recommendations.
+- Autonomous clinical urgency decisions.
+- AI-assigned staff priority.
+- Clinical triage scores.
+- Safe-to-wait statements.
+- Claims that the patient is medically cleared.
+
+AI must never assign operational priority. Qualified clinical staff retain that responsibility.
+
+### Structured output requirements
+
+Use structured output when the chosen OpenRouter route supports it.
+
+If using JSON Schema mode, request strict structured output and require a provider endpoint supporting the requested parameters.
+
+If the selected free model cannot enforce the exact schema, use a safe JSON-mode or tool-call alternative only when it produces output that the existing application can validate.
+
+In every case:
+
+- Parse the response server-side.
+- Validate it using the existing Zod schema.
+- Reject unexpected fields and malformed values as appropriate.
+- Never trust a model's assertion that its output is schema-valid.
+- Do not use unvalidated AI output in the staff UI.
+
+A model returning HTTP 200 does not mean extraction succeeded.
+
+## 8. Keep the Evidence Integrity Engine intact
+
+This is a mandatory condition.
+
+The original confirmed patient narrative remains immutable.
+
+Every extracted source quotation must be checked against the exact confirmed narrative.
+
+Continue using the existing grounding logic, including `groundBriefQuotesAgainstNarrative`.
+
+For every supported extracted claim:
+
+- Check that the quote exists verbatim in the confirmed narrative.
+- Reject unsupported quotations.
+- Demote unsupported claims to uncertain where the existing implementation specifies that behaviour.
+- Preserve explicit unknown and missing information.
+- Do not generate fabricated quotations to fill the schema.
+- Do not rewrite the patient's original statement.
+
+The same exact evidence verification must run for Gemini and OpenRouter output.
+
+Both providers must enter the same post-processing and validation pipeline.
+
+Do not create a provider-specific shortcut around EIE.
+
+## 9. Provider observability and retry behaviour
+
+Persist the actual provider/model that generated the successful brief using the existing AI model metadata fields.
+
+If the existing database schema can store the model ID, use it.
+
+Do not create a migration unless absolutely necessary.
+
+Record safe operational information, such as:
+
+- Provider selected.
+- Model returned by provider.
+- Success or failure.
+- Sanitized error category.
+- Duration.
+- Retry attempt.
+- Relevant audit event.
+
+Never log patient narrative or full AI prompts.
+
+Do not expose internal provider error text to patients.
+
+The staff interface should simply display:
+
+"AI summary unavailable. The patient's statement is saved and can still be reviewed."
+
+Provide a clear:
+
+"Retry AI summary"
+
+action for authorized clinical staff.
+
+Do not create infinite automatic retries.
+
+Avoid retry storms and unnecessary free-model usage.
+
+Use bounded timeouts and a small number of provider attempts.
+
+If the free router returns quota or capacity errors, preserve the intake and record a clear failure status.
+
+### Voice transcription boundary
+
+Do not break the existing voice-transcription implementation.
+
+Keep `POST /api/intakes/transcribe` and the current Gemini transcription flow.
+
+Do not send audio recordings to OpenRouter's chat completions endpoint.
+
+If voice transcription fails, preserve the typed fallback and existing microphone-unavailable handling.
+
+The OpenRouter fallback requested here is for text-based clinical brief extraction.
+
+### Privacy restriction
+
+This is a synthetic hackathon demonstration.
+
+Only synthetic data may be sent to OpenRouter.
+
+Do not represent a free-model provider fallback as approved for real patient information or production clinical care.
+
+Do not weaken the privacy or safety disclosures already in the application.
+
+---
+
+# PHASE C — REDESIGN THE CLINICAL STAFF EXPERIENCE
+
+## 10. Design problem
+
+The screenshots of the current staff workspace show an interface that is too complicated.
+
+The clinical queue contains:
+
+- Excessive facility and role information.
+- Multiple technical status labels.
+- Many badges competing for attention.
+- Three large metric cards.
+- A long technical description.
+- A large queue panel with additional labels.
+- Multiple filters displayed simultaneously.
+- Internal patient references and implementation labels in prominent positions.
+- A dark sidebar containing technical navigation.
+- A public marketing footer inside the staff workspace.
+
+The intake-detail page is also too complicated.
+
+It divides information into many separate sections:
+
+- Patient-confirmed narrative.
+- Structured AI extraction draft.
+- Evidence quote provenance.
+- Staff-reviewed intake copy.
+- Staff-controlled priority and workflow state.
+- Multiple status tags.
+- Technical hash information.
+- Audit event timeline.
+
+These are important capabilities, but they are presented in a way that forces the user to understand the system before they can do their work.
+
+**We need a clinical workspace that is simple, understandable and operationally focused.**
+
+The goal is not to remove functionality. It is to remove unnecessary visual and cognitive complexity.
+
+Use the existing MedFlow design system. Preserve the visual identity, but improve information architecture and component hierarchy.
+
+Do not redesign the landing page or patient intake during this phase.
+
+---
+
+# 11. REDESIGN `/staff/queue`
+
+## Primary purpose
+
+A clinical staff member should be able to open the queue and immediately answer:
+
+1. Which patient records need attention?
+2. What information did the patient provide?
+3. What is the current review state?
+4. Where do I click to review a record?
+
+Everything else is secondary.
+
+## New queue layout
+
+### A. Simplified application header
+
+Create a compact staff application header.
+
+Include:
+
+- MedFlow logo.
+- "Clinical Workspace" or "Patient Queue".
+- Small demo-environment indicator where appropriate.
+- Current staff role or account menu.
+- Sign-out action.
+
+Remove unnecessary repeated facility information.
+
+Do not prominently display internal facility IDs such as `DEMO-CLINIC-01`.
+
+A friendly facility name is sufficient where the facility context is useful.
+
+### B. Simplify the sidebar
+
+Remove the large "Platform Paths" section and unnecessary navigation.
+
+The primary navigation should contain only:
+
+- Patient Queue.
+- Demo Hub, if genuinely needed.
+- Sign out/account access.
+
+Do not make the public marketing site part of the clinical navigation.
+
+Do not render the public marketing footer inside the staff workspace.
+
+Use a compact sidebar on desktop if it improves navigation. On mobile, use an accessible compact navigation pattern.
+
+### C. Page heading
+
+Use a straightforward heading:
+
+"Patient Queue"
+
+Supporting text:
+
+"Review incoming patient information and manage follow-up."
+
+Show a small live/updated indicator and a Refresh action.
+
+Remove phrases such as:
+
+- Facility-scoped clinical staff workspace.
+- Deterministic queue ordering.
+- Tenant-scoped facility information.
+- Authorized endpoints.
+
+These belong in technical documentation, not the primary user interface.
+
+### D. Remove the three large metric cards
+
+The current metrics take up too much space.
+
+Replace them with a compact summary, for example:
+
+"10 active intakes · 4 need attention"
+
+The exact values must derive from actual queue data.
+
+Do not invent metrics.
+
+If a small count indicator is useful, it should not dominate the page.
+
+### E. Filters
+
+Replace the visible filter complexity with a simple interface.
+
+Primary filters:
+
+- All
+- Needs Review
+- In Progress
+
+Place less frequently used filters inside a compact Filters control or popover.
+
+Preserve existing workflow-status filtering, priority filtering and completed-record inclusion functionality.
+
+Do not delete existing filtering behaviour.
+
+Make the default view useful without requiring the user to adjust multiple dropdowns.
+
+### F. Patient queue items
+
+The queue should feel like a clear list of people requiring attention, not a database administration table.
+
+Each patient row/card should communicate:
+
+- Patient name or anonymous designation.
+- Age, if supplied.
+- When the intake was submitted.
+- A brief preview of the patient's concern, where available and appropriate.
+- One clear review/workflow status.
+- One concise AI state where necessary.
+- One primary action: "Review".
+
+Example composition:
+
+**Chidi Okafor**
+27 years · Submitted 4:59 PM
+
+"Since yesterday evening, I have had a throbbing headache and mild fever..."
+
+[Needs review] [AI summary unavailable]
+
+[Review]
+
+Use realistic content derived from the existing records.
+
+Do not invent symptoms or summaries.
+
+### G. Status hierarchy
+
+Do not display five or six badges for every record.
+
+Use one primary workflow label and one secondary AI state only when useful.
+
+Examples:
+
+Workflow:
+- New
+- In Review
+- Awaiting Clarification
+- Completed
+
+AI state:
+- Summary Ready
+- Summary Unavailable
+- Needs Clarification
+
+Priority may appear only when a staff member has actually assigned it.
+
+Do not show an AI-generated clinical priority.
+
+Do not repeat the same state through several badges, labels and descriptions.
+
+### H. Sorting
+
+Preserve the existing deterministic queue ordering.
+
+Keep operational priority controlled by staff.
+
+Do not silently alter sorting logic to make the redesign easier.
+
+### I. Responsive behaviour
+
+On desktop, the queue should have enough whitespace and a clear horizontal hierarchy.
+
+On mobile, records should become readable cards or compact rows, without tiny badges or horizontal scrolling.
+
+The user should not need to open a record just to understand its basic state.
+
+---
+
+# 12. REDESIGN `/staff/intakes/[intakeId]`
+
+## Primary purpose
+
+The clinical staff member should be able to understand the patient's statement, inspect the AI-assisted summary, review the supporting evidence and take an appropriate workflow action.
+
+Make this experience significantly shorter and easier to scan.
+
+The following information hierarchy is recommended.
+
+### Section 1: Patient identity and navigation
+
+At the top:
+
+- Back to Queue.
+- Patient name.
+- Age, where available.
+- Patient reference, shown discreetly.
+- Submission time.
+- Current workflow state.
+
+Remove the large technical facility description.
+
+Remove unnecessary technical identifier badges from the main heading.
+
+### Section 2: Patient's statement
+
+This should be the primary content section.
+
+Title:
+
+"What the patient said"
+
+Show the full confirmed statement in a clean, readable surface.
+
+Make it obvious that these are the patient's own words.
+
+The original narrative is immutable.
+
+Staff corrections must never overwrite it.
+
+Do not prominently display the full SHA-256 hash. Preserve the hash in storage and verification logic.
+
+If technical provenance information needs to remain accessible for evaluation, put it inside a collapsed "Technical details" disclosure.
+
+### Section 3: AI-assisted summary
+
+Title:
+
+"AI Summary"
+
+This should show:
+
+- Chief concern.
+- Important reported symptoms.
+- Relevant context.
+- Details that require clarification.
+- Limitations.
+
+Use concise, readable presentation.
+
+Do not show internal model identifiers or lengthy technical explanations.
+
+Use clear distinctions between:
+
+- Information extracted from the patient statement.
+- Information that remains uncertain.
+- Information the patient did not provide.
+
+### Evidence display
+
+Evidence Integrity Engine verification must remain intact.
+
+However, avoid a separate large technical provenance panel that makes the page longer.
+
+Where an AI-extracted detail has supporting evidence, allow the staff member to reveal or inspect the original supporting quotation within the summary.
+
+For example:
+
+**Reported symptom**
+Headache.
+
+Supporting statement:
+"Since yesterday evening, I have had a throbbing headache..."
+
+Make it visually clear that the quotation belongs to the original patient narrative.
+
+Unverified claims must never be presented as grounded evidence.
+
+When there are no valid evidence quotes, display a simple and honest state.
+
+### AI failure state
+
+When extraction has failed, do not render several empty sections.
+
+Show one concise panel:
+
+"AI summary unavailable"
+
+"The patient's statement is saved. You can still review the original information."
+
+Primary action:
+
+"Retry AI Summary"
+
+The action must call the existing authorized extraction endpoint.
+
+After a successful retry:
+
+- Refresh the data.
+- Display the generated brief.
+- Display grounded supporting evidence.
+- Update the AI state.
+- Preserve the original patient narrative.
+
+If retry fails, show a simple non-technical message.
+
+Do not expose raw Gemini/OpenRouter exceptions to staff.
+
+### Section 4: Staff review
+
+Consolidate the review controls into one understandable section.
+
+Title:
+
+"Clinical Review"
+
+The main available actions should be easy to understand.
+
+Where an AI summary exists:
+
+- Confirm Summary.
+- Edit Summary.
+
+If editing:
+
+- Create a separate staff-reviewed copy.
+- Require the existing correction note.
+- Preserve the original AI draft.
+- Preserve the original patient narrative.
+
+Do not merge these three sources into one mutable text field.
+
+Show the current review state clearly.
+
+If the AI extraction has failed, do not present a fake summary for confirmation.
+
+### Section 5: Manage workflow
+
+The priority and status controls currently occupy too much space and are presented as several separate forms.
+
+Consolidate them into one compact section:
+
+"Manage Intake"
+
+Include:
+
+**Operational priority**
+
+Existing staff-controlled priority options.
+
+**Workflow status**
+
+Existing status transition options.
+
+**Reason or note**
+
+Require it wherever the existing business rules require it.
+
+Provide one clear save/confirmation interaction where practical.
+
+Do not remove mandatory reasons.
+
+Do not change existing permitted status transitions.
+
+Do not let AI assign or change priority.
+
+Do not make it look as though the AI is deciding who receives urgent care.
+
+### Section 6: Activity history
+
+Keep the complete audit history.
+
+However, collapse it by default.
+
+Show:
+
+"Activity History · N events"
+
+Allow the staff member to expand it.
+
+Preserve:
+
+- Patient submission.
+- Transcript confirmation.
+- AI success/failure.
+- Review started.
+- Brief confirmed/corrected.
+- Priority changes.
+- Workflow status changes.
+- Actor attribution.
+- Timestamps.
+- Existing append-only audit integrity.
+
+Do not remove audit events or database enforcement.
+
+### Avoid technical clutter
+
+Hide these from the normal clinical presentation:
+
+- Database terminology.
+- Internal tenant IDs.
+- API endpoint names.
+- Provider implementation details.
+- Full hash strings.
+- Raw error codes.
+- Excessive provenance badges.
+- Redundant technical status indicators.
+
+Retain necessary developer and security information in documentation or a clearly separated technical disclosure.
+
+---
+
+# 13. INTERACTION AND ACCESSIBILITY REQUIREMENTS
+
+The clinical workspace must be understandable without a tutorial.
+
+A new judge should be able to:
+
+1. Open the clinical queue.
+2. Find a patient.
+3. Open the record.
+4. Understand what the patient said.
+5. Inspect the AI summary.
+6. Understand whether it needs clarification.
+7. Confirm or correct the summary.
+8. Assign operational priority.
+9. Change workflow status.
+10. Inspect the activity history.
+
+Use plain language.
+
+Avoid developer-centric terminology.
+
+Keep button labels action-oriented.
+
+Use appropriate loading, success, error and disabled states.
+
+Ensure keyboard navigation and focus visibility.
+
+Do not make colour the only indication of status.
+
+Mobile layouts must be intentionally designed.
+
+---
+
+# 14. CRITICAL FUNCTIONALITY THAT MUST NOT REGRESS
+
+Preserve all of the following:
+
+- Patient intake form and submission.
+- Voice transcription.
+- Gemini transcription.
+- Gemini clinical extraction.
+- OpenRouter fallback extraction.
+- Zod schema validation.
+- Evidence quote grounding.
+- Original patient narrative immutability.
+- SHA-256 integrity.
+- Separate raw and confirmed transcripts.
+- Separate AI and staff-reviewed briefs.
+- Staff correction notes.
+- Clinical review confirmation.
+- Staff-controlled priority.
+- Workflow status transitions.
+- Append-only audit history.
+- Database tenant isolation.
+- Firebase Auth.
+- Signed demo sessions.
+- Admin/nurse role separation.
+- All existing API authorization.
+- Existing seed scenarios.
+- Existing tests.
+
+No migration should be created unless the current schema genuinely cannot support the requirements. Explain and justify any proposed migration before executing it.
+
+Do not bypass authorization to make the interface work.
+
+Do not remove tests or weaken assertions.
+
+---
+
+# PHASE D — FINAL VERIFICATION
+
+## 15. Automated tests
+
+Run:
+
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+
+Compare against the previous 82-test baseline.
+
+Add tests for:
+
+- OpenRouter provider selection.
+- OpenRouter request authentication without exposing keys.
+- OpenRouter response parsing.
+- Malformed JSON rejection.
+- Zod schema validation.
+- Evidence grounding of OpenRouter output.
+- Gemini failure followed by OpenRouter success.
+- Missing OpenRouter key.
+- Both providers unavailable.
+- Intake persistence despite AI failure.
+- Database failure handling.
+- Idempotency under retry.
+- Staff retry after AI failure.
+- Clinical UI state rendering.
+
+Do not count removed or skipped tests as improvements.
+
+## 16. Provider tests
+
+Run a controlled provider sequence.
+
+**Test A: Gemini success**
+
+Verify Gemini generates a brief and OpenRouter is not called.
+
+**Test B: Gemini upstream failure**
+
+Simulate an upstream 503 or 429.
+
+Verify the OpenRouter fallback is called and its output goes through the normal schema and evidence pipeline.
+
+**Test C: OpenRouter unavailable**
+
+Verify the patient intake remains persisted and AI status is failed.
+
+**Test D: Missing OpenRouter key**
+
+Verify that the application fails safely, without exposing credentials or crashing.
+
+**Test E: Invalid OpenRouter response**
+
+Verify that malformed or unsupported output is rejected and is not presented as a valid brief.
+
+Use deterministic unit tests or controlled provider mocks for failure scenarios. Do not consume free-model quota unnecessarily.
+
+Where live provider testing is performed, clearly report the actual provider/model returned.
+
+## 17. Vercel deployment verification
+
+This requirement is essential.
+
+The application must be tested beyond localhost.
+
+Deploy to a Vercel Preview environment first, with the necessary environment variables configured.
+
+Perform a real synthetic patient submission against the hosted deployment.
+
+Verify:
+
+1. The browser sends `POST /api/intakes`.
+2. The response is not HTTP 500.
+3. The patient reference is returned.
+4. The record is persisted in Neon.
+5. AI extraction runs using the configured provider chain.
+6. AI failure does not destroy a saved intake.
+7. The record appears in `/staff/queue`.
+8. The staff member can open and inspect it.
+9. Staff retry works.
+10. Evidence grounding remains active.
+11. Audit events are created.
+12. Admin/nurse authorization remains intact.
+
+Then test the actual production deployment when the founder approves the deployment.
+
+Do not state that Vercel production is fixed merely because the local development server works.
+
+If the real production logs are inaccessible, state that the production 500 has not yet been conclusively verified, and provide the exact remaining founder action.
+
+---
+
+# 18. SCREENSHOTS REQUIRED
+
+Provide actual screenshots of the redesigned running application.
+
+At minimum:
+
+- Clinical Queue — Desktop.
+- Clinical Queue — Mobile.
+- Intake Detail with successful AI extraction — Desktop.
+- Intake Detail with successful AI extraction — Mobile.
+- Intake Detail with AI unavailable and retry action — Desktop.
+- Intake Detail with staff review controls — Mobile.
+- Expanded audit history.
+
+Do not create static mockups in place of implemented application screenshots.
+
+Show the actual rendered application.
+
+Test at:
+
+- 360 × 800.
+- 390 × 844.
+- 430 × 932.
+- 1280 × 800.
+- 1440 × 900.
+
+Verify no horizontal overflow.
+
+---
+
+# 19. FINAL COMPLETION REPORT
+
+Return a detailed report with these sections:
+
+### A. Production HTTP 500
+- Exact root cause.
+- Relevant route and code files.
+- Fix applied.
+- Production environment variables required.
+- Actual Vercel verification result.
+- Remaining founder actions, if any.
+
+### B. Gemini and OpenRouter
+- Gemini failure cause.
+- Gemini correction.
+- OpenRouter fallback implementation.
+- Exact model/router used.
+- Schema validation result.
+- EIE verification result.
+- Behaviour when both providers fail.
+- Any provider limitations.
+
+### C. Clinical workspace redesign
+- Queue redesign.
+- Intake-detail redesign.
+- Removed technical clutter.
+- Preserved user actions and workflow.
+
+### D. Quality assurance
+- Test results.
+- Typecheck.
+- Lint.
+- Build.
+- Browser testing.
+- Responsive testing.
+- Live database verification.
+- Vercel verification.
+
+### E. Screenshots
+Attach the real screenshots requested above.
+
+### F. Outstanding issues
+List all unresolved issues honestly.
+
+---
+
+# FINAL SCOPE BOUNDARY
+
+This authorization covers:
+
+1. Fixing the production intake submission problem.
+2. Stabilizing Gemini extraction.
+3. Integrating OpenRouter free fallback.
+4. Simplifying the clinical queue.
+5. Simplifying the clinical intake-detail page.
+6. Testing the hosted application.
+
+Do not start Milestone 3.
+
+Do not redesign the public landing page or patient intake again.
+
+Do not introduce a new database architecture.
+
+Do not add unrelated AI functionality.
+
+Do not claim clinical validation.
+
+Do not claim real-world deployment readiness.
+
+The goal is a reliable, understandable, fully demonstrable hackathon submission.
+
+**Complete the implementation, verify it, provide the report and screenshots, and stop for founder review.**
