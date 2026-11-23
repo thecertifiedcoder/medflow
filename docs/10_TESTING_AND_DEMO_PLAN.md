@@ -1,5 +1,8 @@
 # MedFlow — Test Plan, Demo Script and Judging Evidence
 
+> **Current judge path (2026-11-23):** Use `/demo` → **Enter Clinical Workspace** → `/staff/queue`. The hackathon UI does not expose Administrator Workspace or normal Staff Sign-In. Confirm `/staff/login` and `/staff/admin` redirects and retain API-level authorization tests. Text extraction provider order is Gemini primary → Gemini fallback model → optional OpenRouter free router; voice transcription remains Gemini-only.
+
+
 ## 1. Test strategy
 
 Test the running application, not just whether code generation completed. Use synthetic data only.
