@@ -1,5 +1,8 @@
 # MedFlow — Clinical Safety, Human Oversight and Privacy Rules
 
+> **Current hackathon access note (2026-11-23):** Judges use the server-signed Demo Clinical Staff session from `/demo`. The public judge flow does not require Google Sign-In. This does not make the workspace public: the session and server-side facility/role authorization checks remain required for protected staff APIs.
+
+
 ## 1. Prototype status
 
 MedFlow is a hackathon prototype. It is not clinically validated, not a substitute for a triage protocol and not approved for live patient care. All demo scenarios must be synthetic.
