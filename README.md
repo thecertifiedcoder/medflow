@@ -1,137 +1,280 @@
 # MedFlow
 
-**Working concept:** Voice-first, AI-assisted clinical intake with evidence-linked staff review and nurse-controlled patient flow.
+**Voice-first, AI-assisted patient intake with evidence-linked clinical review.**
 
-**Competition:** TCC Hackathon 2026 · **Current status:** Milestones 1A (Next.js foundation), 1B (Firebase Auth + same-origin `/__/auth/*` proxy + server ID-token verification), 1C (UI design-system migration), **Milestone 1D (Phases 1D-1, 1D-2, and 1D-3 — live Neon PostgreSQL migrations, idempotent canonical seed, live PG-01..PG-06 constraint/trigger verification, server-side staff APIs, 5s visibility-aware UI polling, and Cloud Firestore decommissioning under ADR `D-020`)**, **Phase DA-1 (Hackathon Demo Access under ADR `D-021`)**, and **Phase UX-1 (Platform Experience, Information Architecture & Interface Rework under ADR `D-022` — 7 dedicated role-separated screens, route-aware top bars, `StaffWorkspaceLayout`, dedicated `/demo` judge hub, dedicated `/staff/admin` administrator workspace, focused `/staff/queue` clinical workspace, and calm `.mf-pt` patient self-intake experience at `/intake`)** are implemented and verified. Milestone 2 (patient intake persistence, server-side Gemini transcription/extraction, and staff review mutations) and Milestone 3 (cryptographic Evidence Integrity Engine / `EVIDENCE_HMAC_SECRET`) are pending separate founder approval.
+MedFlow helps patients describe what brings them to a clinic using speech or text, preserves the patient's confirmed statement, prepares an AI-assisted structured summary with source quotations, and gives clinical staff a focused queue for human review and workflow management.
 
-> **Safety notice:** This is a hackathon prototype, not a clinically validated medical device or emergency service. Do not use it for real patient care or enter real patient information or audio. All demonstrations and demo identities use synthetic data only. MedFlow must not diagnose, prescribe, autonomously assign clinical urgency, or tell a patient that it is safe to wait.
+**Competition:** TCC Hackathon 2026  
+**Product status:** Hackathon demonstration prototype  
+**Live application:** https://medflow-seven-tau.vercel.app  
+**Judge Access:** https://medflow-seven-tau.vercel.app/demo  
+**Patient Intake:** https://medflow-seven-tau.vercel.app/intake
 
----
-
-## Try the MedFlow Demo
-
-When Hackathon Demo Mode is enabled on the deployment (`MEDFLOW_DEMO_MODE_ENABLED=true` with a server-only `MEDFLOW_DEMO_SESSION_SECRET`), judges and evaluators can test MedFlow's role-separated experience immediately from the Public Home page (`/`) or the dedicated Hackathon Demo Access hub (`/demo`) without Google Sign-In or manual account provisioning:
-
-1. **Public Home (`/`) — Choose Your MedFlow Journey** — Focused entry-point selection screen with three clear paths:
-   - **1. Patient Self-Intake (`/intake`)** — For patients and visitors checking in at `DEMO-CLINIC-01`.
-   - **2. Staff Sign-In (`/staff/login`)** — For provisioned nurses, doctors, and facility administrators authenticating via Google Sign-In.
-   - **3. Hackathon Demo Access (`/demo`)** — For hackathon judges evaluating the platform with one-click synthetic sessions.
-2. **Start Patient Intake (`/intake` — no account required)** — Opens the dedicated `.mf-pt` patient canvas with a patient-only header (`PatientTopBar`, zero staff/admin/demo links), an always-visible emergency human-help safety banner, a 3-step patient journey (`1. Share symptoms` → `2. Review & confirm` → `3. Submission & Milestone 2 boundary`), interactive typed and voice input mode previews, synthetic example presets, optional patient context fields, mandatory patient confirmation checkbox, and an honest UX-1 Milestone 2 readiness notice.
-3. **Enter as Demo Administrator (`admin` via `/demo`)** — Issues a signed HTTP-only session cookie (`POST /api/demo/session/admin`) for synthetic `demo-admin-01` inside `demo-clinic-01` (`DEMO-CLINIC-01`) and routes directly to `/staff/admin`. Allows inspection of live PostgreSQL facility telemetry (`GET /api/staff/admin/facility`: `activeStaffCount`, `totalIntakesCount`, `unassignedIntakesCount`), provisioned synthetic identities, and governance rules, plus navigation to `/staff/queue` via the role-aware `StaffWorkspaceLayout` sidebar.
-4. **Enter as Demo Clinical Staff (`nurse` via `/demo`)** — Issues a signed HTTP-only session cookie (`POST /api/demo/session/staff`) for synthetic `demo-staff-01` inside `demo-clinic-01` (`DEMO-CLINIC-01`) and routes directly to `/staff/queue`. Displays the focused clinical intake queue workspace (KPI summary cards, workflow/priority filters, 5-second visibility-aware sync badge, and the intentional empty-queue state when `0` rows exist) while enforcing strict role separation (admin navigation is hidden and direct navigation to `/staff/admin` is blocked with HTTP 403 / `data-testid="admin-role-restricted-panel"`).
-
-**Switching roles & signing out:** You can switch directly between Demo Administrator and Demo Clinical Staff from `/demo` (the server automatically revokes the superseded session cookie) or select **Sign out** in the workspace top bar to revoke the active demo session immediately (`POST /api/demo/logout`).
-
-**Synthetic-data-only notice & current boundaries (as of Phase UX-1):**
-- All demo identities (`demo-admin-01`, `demo-staff-01`) and facility records (`demo-clinic-01` / `DEMO-CLINIC-01`) are strictly synthetic. Never enter real patient information or real patient audio.
-- **Milestone 2 & Milestone 3 boundaries:** Consistent with MedFlow's staged implementation rules, Phase UX-1 delivers the complete information-architecture and interface rework on top of the Phase 1D-3 / DA-1 backend baseline (`0` patient intake rows seeded in `demo-clinic-01`). Patient intake POST persistence, server-side Gemini audio transcription/extraction, and staff review/priority/status mutation endpoints remain deferred to **Milestone 2** (after UX-1 review), and cryptographic EIE persistence (`EVIDENCE_HMAC_SECRET`) remains deferred to **Milestone 3**.
-- **Process-local revocation registry:** Demo session revocation on logout/switch is tracked in server memory until token expiry; in multi-instance serverless deployments, revocation is process-local (acceptable for bounded hackathon demo TTLs, and another reason Demo Mode is never for production clinical auth).
+> **Synthetic-data-only demonstration.** Do not enter real patient information or audio. MedFlow is not clinically validated, is not an emergency service, and must not be used to make real patient-care decisions. It does not diagnose, prescribe, independently determine clinical urgency, or tell anyone that it is safe to wait. Clinical staff retain control of review priority and workflow decisions.
 
 ---
 
-## Hackathon Demo Mode Architecture & Security (`D-021`, `D-022`)
+## Try MedFlow
 
-Hackathon Demo Mode is a server-controlled evaluation layer designed so judges can evaluate MedFlow safely without weakening MedFlow's PostgreSQL authorization or Firebase Authentication architecture:
+The hackathon experience is designed around one simple path for judges:
 
-- **Fixed server-defined personas (zero client-controlled roles/tenants):**
-  - `POST /api/demo/session/admin` → fixed `demo-admin-01`, role `admin`, facility `demo-clinic-01` (`is_demo = true`), redirects to `/staff/admin`.
-  - `POST /api/demo/session/staff` → fixed `demo-staff-01`, role `nurse`, facility `demo-clinic-01` (`is_demo = true`), redirects to `/staff/queue`.
-  - Any request body attempting to supply `role`, `facilityId`, or `uid` is rejected with `400 UNSUPPORTED_REQUEST_BODY`.
-- **Signed, HTTP-only session cookies (`medflow_demo_session`):**
-  - Signed server-side with `HMAC-SHA256` using server-only `MEDFLOW_DEMO_SESSION_SECRET` (verified with `crypto.timingSafeEqual`, strict Zod payload validation, expiration checks, and server-side revocation checks).
-  - Never stored in `localStorage` or `sessionStorage`, never readable by browser JavaScript.
-  - Emits `HttpOnly; Path=/; Max-Age=<ttl>; Secure; SameSite=None; Partitioned` in production/HTTPS environments (compatible with both standalone tabs and embedded preview frames) and `HttpOnly; Path=/; Max-Age=<ttl>; SameSite=Lax` on local non-HTTPS HTTP.
-- **CSRF protection:** `POST /api/demo/session/*` and `POST /api/demo/logout` require the non-simple custom header `X-MedFlow-Demo-Request: 1` and validate same-origin `Origin`/`Referer` host matching against `X-Forwarded-Host`/`Host`.
-- **Unified PostgreSQL authorization boundary:** Every protected staff Route Handler (`/api/staff/session`, `/api/staff/intakes`, `/api/staff/intakes/[intakeId]`, `/api/staff/admin/facility`) uses the single server-side `resolveStaffSession` / `requireAuthorizedStaff` boundary (`src/lib/auth/staff-authorization.ts`). Demo sessions are still verified against active PostgreSQL `staff_profiles`, `facility_memberships`, and `facilities` (`is_demo = true`) on every request, cannot access any facility other than `demo-clinic-01` (`403 FACILITY_ACCESS_DENIED`), and obey exact RBAC role separation (`admin` → `200` on `/api/staff/admin/facility`; `nurse` → `403 ADMIN_ROLE_REQUIRED`).
-- **Firebase Authentication preserved intact:** Standard Google Sign-In on `/staff/login`, `/__/auth/*` same-origin proxy, and server-side Firebase Admin `verifyIdToken()` remain untouched. Reserved synthetic demo UIDs (`demo-admin-01`, `demo-staff-01`) are explicitly rejected on the Firebase Bearer path (`403 RESERVED_DEMO_UID`).
+1. Open [Judge Access](https://medflow-seven-tau.vercel.app/demo).
+2. Select **Enter Clinical Workspace**.
+3. Review the patient queue at `/staff/queue`.
+4. Open an intake to inspect the patient's confirmed statement, AI-assisted summary and supporting quotations.
+5. Use the available staff review, correction, priority and workflow actions.
 
-### Enabling, Disabling, and Configuring Demo Mode
+No Google Sign-In or manual account provisioning is required for the judge journey. The demo session is created through the server-controlled, signed Clinical Staff demo flow.
 
-Demo Mode is **disabled by default** and **fails closed** (`403 DEMO_MODE_DISABLED` when disabled; `503 DEMO_MODE_MISCONFIGURED` if enabled without a valid secret). Never prefix any of these variables with `NEXT_PUBLIC_`.
-
-| Environment Variable | Scope | Default | Description |
-|---|---|---|---|
-| `MEDFLOW_DEMO_MODE_ENABLED` | Server-only | `false` | Set to `true` **only** in the intended hackathon evaluation deployment. Any other value disables Demo Mode. |
-| `MEDFLOW_DEMO_SESSION_SECRET` | Server-only | *(unset)* | Required when Demo Mode is enabled. Must be at least 32 characters of high-entropy random text (e.g., `openssl rand -base64 48`). |
-| `MEDFLOW_DEMO_SESSION_TTL_SECONDS` | Server-only | `7200` | Optional session lifetime in seconds (bounded between `300` and `28800`). |
-| `DATABASE_URL` | Server-only | *(required)* | Pooled Neon PostgreSQL connection string used by Next.js Route Handlers at runtime. |
-| `DATABASE_URL_UNPOOLED` | Server-only | *(required for CLI)* | Direct Neon PostgreSQL connection string used by `npm run db:migrate` and `npm run db:seed`. |
-| `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE` | Public | `DEMO-CLINIC-01` | Public intake code for the canonical synthetic demo facility. |
-
-- **To enable Demo Mode:** Set `MEDFLOW_DEMO_MODE_ENABLED=true` and a ≥32-char random `MEDFLOW_DEMO_SESSION_SECRET` in your deployment host's server secrets (e.g., Google AI Studio Settings > Secrets or Cloud Run secrets), ensure `npm run db:seed` has been executed, and restart/redeploy.
-- **To disable Demo Mode safely:** Remove `MEDFLOW_DEMO_MODE_ENABLED` or set `MEDFLOW_DEMO_MODE_ENABLED=false`. All `/api/demo/session/*` routes immediately return `403 DEMO_MODE_DISABLED` and any existing demo cookies are immediately rejected on every `/api/staff/*` route.
-
-### Seeding, Resetting Demo Data, and Real Firebase Staff Provisioning
-
-- **Seed / re-verify canonical demo facility and synthetic demo accounts (idempotent):**
-  ```bash
-  npm run db:migrate   # Applies Drizzle SQL migrations via DATABASE_URL_UNPOOLED
-  npm run db:seed      # Upserts demo-clinic-01 + demo-admin-01 (admin) + demo-staff-01 (nurse)
-  ```
-- **Reset synthetic demo data:** Because `patient_intakes`, `intake_evidence`, and `audit_events` enforce append-only/immutability triggers at the PostgreSQL layer, resetting synthetic demo data should be performed only on a non-production hackathon database branch (e.g., Neon branch reset followed by `npm run db:migrate && npm run db:seed`).
-- **Provision a real Firebase Google Sign-In staff account (Option 2B / `D-016`):** Supply `SEED_ADMIN_UID`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_DISPLAY_NAME` (and optional `SEED_ADMIN_ROLE=admin|nurse|doctor`) in the shell environment when running `npm run db:seed`, then sign in via Google Sign-In at `/staff/login`.
-
-### Why Demo Mode Is Not Production Hospital Authentication
-
-Demo Mode intentionally issues shared, passwordless synthetic sessions to public hackathon judges for a single synthetic clinic (`demo-clinic-01`) with process-local revocation. Production clinical deployments must keep `MEDFLOW_DEMO_MODE_ENABLED=false` and enforce verified per-clinician identity (e.g., SSO/OIDC/Firebase Auth with MFA), strict tenant RBAC, centralized session revocation, audit attribution to individual licensed staff, and formal clinical/regulatory governance.
+Patients can open [Patient Intake](https://medflow-seven-tau.vercel.app/intake) directly. The patient flow does not require an account.
 
 ---
 
-## Start here
+## The problem
 
-1. Read [`docs/00_START_HERE.md`](docs/00_START_HERE.md) for the project definition, document precedence and current milestone state.
-2. Read [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) before asking Google AI Studio to implement an approved milestone.
-3. Read [`AGENTS.md`](AGENTS.md) for repository-wide rules for AI coding agents and contributors.
-4. Attach the founder-provided standalone HTML design-system file directly to the Google AI Studio conversation. It is the sole visual source of truth; no separate token file or design-system specification is used.
-5. Read [`docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`](docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md) for the approved algorithm direction.
+At clinic check-in, patients often describe their concerns in everyday language. Staff must capture the account, clarify missing information and organise it for review while managing an active intake queue.
 
-## Product thesis
+MedFlow focuses on that first information handoff. It is not a full hospital management system and does not automate clinical decisions.
 
-MedFlow turns a patient's spoken or typed account into an editable transcript and an evidence-linked clinical intake brief. Server-side quote verification checks whether extracted claims can be traced to exact quotations in the original patient-confirmed narrative. Clinical staff review the original narrative and extracted context, correct it where necessary, and independently assign workflow priority/status.
+## How it works
 
-**Core loop:** Patient speaks or types → transcript is reviewed and confirmed → intake is saved in Neon PostgreSQL → server runs Gemini structured extraction → deterministic source-quote checks verify exact substring provenance → staff reviews/corrects → staff assigns workflow priority/status → actions are audited.
+1. **Patient tells their story.** The patient types or records a short voice statement.
+2. **Patient reviews the words.** Voice transcription is presented for editing and explicit confirmation before submission.
+3. **MedFlow saves the statement.** The confirmed narrative is stored separately from the raw voice transcript, with a SHA-256 integrity value and an intake reference.
+4. **AI prepares a draft.** Gemini is the primary text-extraction provider. A Gemini fallback model is attempted before the optional OpenRouter free-model fallback.
+5. **Evidence checks run.** Extracted source quotations are checked against the exact confirmed narrative. Unsupported quotations are removed or the affected item is marked unclear.
+6. **Clinical staff review.** Staff inspect the original statement and AI draft, correct the draft where needed, and control priority and workflow status.
+7. **Actions are audited.** Patient submission, AI processing and staff workflow actions are recorded in the activity history.
 
-The differentiator is not voice capture or a queue by itself. It is the traceable connection between what a patient actually said and the structured information presented to the clinical team. Evidence checks establish source-location integrity only; they do not prove clinical truth or correctness.
+## Implemented capabilities
 
-## Repository map
+| Area | Current implementation |
+|---|---|
+| Patient intake | Guided, multi-step mobile-first flow with optional name and age |
+| Input methods | Typed narrative and browser voice recording |
+| Voice transcription | Server-side Gemini transcription; editable transcript; raw and confirmed text kept separately |
+| Persistence | Neon PostgreSQL intake persistence, reference codes, idempotency and audit events |
+| AI extraction | Gemini primary, Gemini fallback model, optional OpenRouter free-model fallback for text extraction |
+| Output validation | Runtime schema validation before AI output is stored or displayed |
+| Evidence grounding | Exact-substring quote checks against the confirmed narrative; unsupported quotations are removed or demoted |
+| Clinical workspace | Clinical Staff queue, intake detail, review, correction, staff-assigned priority and workflow status |
+| Accountability | Append-only audit events for patient, system and staff actions |
+| Judge access | One-click server-signed Clinical Staff demo session |
 
-- [`docs/`](docs/) — hackathon brief, product strategy, requirements, UX, safety, architecture, data contracts, tests, implementation runbook, decisions and references.
-- [`security_spec.md`](security_spec.md) — Neon PostgreSQL invariants, "Dirty Dozen" controls, and Demo Mode security specification.
-- [`AI_STUDIO_MASTER_PROMPT.md`](AI_STUDIO_MASTER_PROMPT.md) — implementation handoff prompt for Google AI Studio.
-- [`AGENTS.md`](AGENTS.md) — durable rules for AI agents.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution and documentation conventions.
-- [`SECURITY.md`](SECURITY.md) — prototype security and privacy policy.
+AI extraction is non-authoritative. A successful quote match verifies that a quotation occurs in the patient's statement; it does not prove the interpretation is clinically correct.
 
-## Current implementation status
+### Evidence Integrity Engine: implementation boundary
 
-- **Milestone 1A (`Implemented and tested`):** Next.js App Router + TypeScript foundation, strict Zod extraction/intake schemas, server/public environment boundaries, and Preview build.
-- **Milestone 1B (`Implemented and tested`):** Firebase Authentication (Google Sign-In with same-origin `/__/auth/*` proxy) and server-side `verifyIdToken(token)` verification. *(Transitional Cloud Firestore artifacts were decommissioned in Phase 1D-3.)*
-- **Milestone 1C (`Implemented and tested`):** React UI rebuilt to match the single founder-attached HTML design system without TEWS/SATS clinical scoring (`D-019`).
-- **Milestone 1D — Phases 1D-1, 1D-2, and 1D-3 (`Implemented and live-verified`):** Per ADR `D-020`, Neon PostgreSQL (`pg` + Drizzle ORM + Drizzle Kit) replaced Cloud Firestore as MedFlow's authoritative database while Firebase Auth remains the identity provider. Delivered the 6-table schema, composite tenant foreign keys, immutability/append-only triggers, 10-action-to-actor DB checks, staff-review consistency checks, server-side staff APIs, 5s visibility-aware polling, live Neon migrations & canonical seed, live PG-01..PG-06 verification, and full Cloud Firestore decommissioning.
-- **Phase DA-1 — Hackathon Demo Access (`Implemented and verified`):** Per ADR `D-021`, delivered server-controlled Hackathon Demo Mode (`MEDFLOW_DEMO_MODE_ENABLED`, `MEDFLOW_DEMO_SESSION_SECRET`), signed HTTP-only cookie sessions, CSRF protection, server-side session revocation, seeded synthetic personas (`demo-admin-01` → `admin`, `demo-staff-01` → `nurse`) scoped strictly to `demo-clinic-01`, read-only admin-only role separation (`GET /api/staff/admin/facility`), and one-click Demo Administrator / Demo Clinical Staff / Start Patient Intake entry.
-- **Phase UX-1 — Platform Experience, Information Architecture & Interface Rework (`Implemented and verified`):** Per ADR `D-022`, reworked MedFlow's platform experience into 7 focused routes (`/`, `/intake`, `/demo`, `/staff/login`, `/staff/queue`, `/staff/admin`, `/staff/intakes/[intakeId]`), context-aware top bars (`PublicTopBar`, `PatientTopBar`, `WorkspaceTopBar`), role-aware `StaffWorkspaceLayout`, dedicated `/demo` judge evaluation hub, dedicated `/staff/admin` facility administration workspace with strict non-admin HTTP 403 / UI restriction, focused `/staff/queue` clinical workspace with intentional empty state, and calm `.mf-pt` patient self-intake experience at `/intake`.
+The current application includes deterministic runtime quote grounding in `src/lib/gemini/service.ts`, including `groundBriefQuotesAgainstNarrative`. It also stores the confirmed narrative hash and displays supporting quotations for staff review.
 
-Still outstanding (each requires separate founder approval):
-- **Milestone 2 (`Planned — next phase after UX-1 review`):** Public typed/voice patient intake submission & Neon PostgreSQL persistence (`POST /api/intakes`), server-side Gemini audio transcription (`POST /api/intakes/transcribe`) and structured extraction (`POST /api/intakes/[intakeId]/extract`), and staff review/priority/status mutations.
-- **Milestone 3 (`Planned`):** Deterministic Evidence Integrity Engine persistence in `intake_evidence`, server-only `EVIDENCE_HMAC_SECRET` signing/verification, and field-level span-provenance UI.
+The full advanced EIE specification includes persisted field-level evidence records, source spans, provenance envelopes and HMAC signing/verification. Those advanced Milestone 3 capabilities are **not represented as complete** in this repository. The presence of the `intake_evidence` database schema does not mean every extraction currently writes a field-level evidence record or HMAC envelope.
 
-No feature should be described as implemented until it exists in the running application and passes its acceptance tests.
+---
 
-## Approved application stack
+## Technology stack
 
-- **Framework:** Next.js App Router
-- **Language:** TypeScript
-- **UI:** React components rebuilt to match the single founder-provided HTML design-system attachment
-- **Backend:** Next.js Route Handlers
-- **Authentication:** Firebase Authentication (Google Sign-In + same-origin `/__/auth/*` proxy + server-side `verifyIdToken`) for real accounts, plus optional server-controlled Hackathon Demo Mode (signed HTTP-only cookies, disabled by default, scoped strictly to `demo-clinic-01`)
-- **Database (authoritative under `D-020`):** Neon PostgreSQL via `pg` + Drizzle ORM + Drizzle Kit (`DATABASE_URL` for runtime, `DATABASE_URL_UNPOOLED` for direct migrations/seeding; strictly server-only; Cloud Firestore fully decommissioned in Phase 1D-3).
-- **AI:** Server-side Google Gemini API (`@google/genai` SDK; planned for live integration in Milestone 2 with server-side schema validation).
-- **Deployment target:** A verified Node.js host, with Google Cloud Run as the current candidate
+- **Application:** Next.js App Router, React and TypeScript
+- **UI:** Reusable React components and CSS aligned to the MedFlow HTML design-system reference
+- **Server:** Next.js Route Handlers running on the Node.js runtime
+- **Database:** Neon PostgreSQL
+- **Database access:** `pg`, Drizzle ORM and Drizzle Kit
+- **Authentication and demo access:** Firebase Authentication for the retained staff identity integration; server-signed HTTP-only demo sessions for hackathon Judge Access
+- **Primary AI provider:** Google Gemini via `@google/genai`
+- **Text extraction fallback:** OpenRouter `openrouter/free` using its OpenAI-compatible API
+- **Validation:** Zod
+- **Icons:** Lucide React
+- **Deployment:** Vercel
 
-## Design and algorithm boundaries
+### Architecture
 
-The single HTML file attached directly to the Google AI Studio conversation replaces the previous visual system and is the only design reference. Do not create a separate token file or design-system specification. Ignore the HTML's demo JavaScript and do not implement its adult TEWS/SATS scoring UI or other autonomous clinical scoring. The approved algorithm direction is the deterministic Evidence Integrity Engine in `docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md`; it checks exact source quotations and provenance, not clinical truth or urgency.
+```mermaid
+flowchart TD
+    P[Patient browser] -->|Typed or voice intake| N[Next.js application]
+    J[Judge browser] -->|Judge Access| N
+    N -->|Persist confirmed narrative| DB[(Neon PostgreSQL)]
+    N -->|Voice transcription| G[Gemini]
+    N -->|Primary text extraction| G
+    G -->|Fallback model if needed| N
+    N -->|Optional text fallback| O[OpenRouter free router]
+    N -->|Validate and ground quotes| E[Schema validation and quote grounding]
+    E -->|AI draft and status| DB
+    S[Clinical Staff Workspace] -->|Authorised reads and actions| N
+    N -->|Queue, detail and audit data| DB
+```
 
-## Hackathon constraints & commercialisation boundary
+All AI provider calls and database access happen server-side. Browser clients do not receive Gemini or OpenRouter API keys or database credentials.
 
-The hackathon rules and scoring requirements are documented in [`docs/01_HACKATHON_RULES_AND_SCORECARD.md`](docs/01_HACKATHON_RULES_AND_SCORECARD.md). Keep a contemporaneous sprint log and disclose AI assistance. Do not fabricate metrics, clinical validation, partners or user outcomes. Real clinical deployment would require clinical governance, validation against an appropriately selected and licensed protocol, privacy/security assessment, operational controls, and applicable Nigerian regulatory review.
+---
+
+## Repository structure
+
+```text
+medflow/
+├── README.md
+├── AGENTS.md
+├── AI_STUDIO_MASTER_PROMPT.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── .env.example
+├── firebase-applet-config.json
+├── drizzle/                  # SQL migrations and Drizzle metadata
+├── docs/                     # Product, rules, architecture, safety and delivery docs
+├── public/                   # Static assets and design references
+└── src/
+    ├── app/                  # Pages and API Route Handlers
+    ├── components/           # Patient, staff, home, layout and UI components
+    ├── db/                   # Database schema, migrations, seed and verification
+    └── lib/                  # AI providers, APIs, auth, validation and repositories
+```
+
+Important documentation:
+
+- [Hackathon rules and scorecard](docs/01_HACKATHON_RULES_AND_SCORECARD.md)
+- [Product definition](docs/02_PRODUCT_DEFINITION.md)
+- [Clinical safety and privacy](docs/07_CLINICAL_SAFETY_AND_PRIVACY.md)
+- [Technical architecture](docs/08_TECHNICAL_ARCHITECTURE.md)
+- [Data model and API contracts](docs/09_DATA_MODEL_AND_API_CONTRACTS.md)
+- [Testing and demo plan](docs/10_TESTING_AND_DEMO_PLAN.md)
+- [Repository and judge readiness](docs/12_REPOSITORY_AND_JUDGE_READINESS.md)
+- [Sprint log and AI disclosure](docs/17_SPRINT_LOG_AND_AI_DISCLOSURE.md)
+- [Evidence Integrity Engine specification](docs/19_EVIDENCE_INTEGRITY_ENGINE_SPEC.md)
+- [Security specification](security_spec.md)
+
+---
+
+## Run locally
+
+### Prerequisites
+
+- Bun (the repository includes `bun.lock`)
+- Node.js compatible with the installed Next.js version
+- A Neon PostgreSQL database
+- A Gemini API key for voice transcription and primary extraction
+- An OpenRouter API key for the optional text-extraction fallback
+- A configured synthetic demo facility and demo session secret
+
+### Install and configure
+
+```bash
+bun install
+cp .env.example .env.local
+```
+
+Edit `.env.local` with valid values for the environment you are using. Never commit `.env.local` or any real secret.
+
+### Database setup
+
+```bash
+bun run db:migrate
+bun run db:seed
+```
+
+- `DATABASE_URL` is the pooled runtime connection.
+- `DATABASE_URL_UNPOOLED` is used for direct migration and seed operations.
+- The seed operation provisions the canonical synthetic demo facility and its demo staff records. It is designed to be idempotent.
+
+### Start development
+
+```bash
+bun run dev
+```
+
+Open http://localhost:3000.
+
+### Quality checks
+
+```bash
+bun run typecheck
+bun run test
+bun run lint
+bun run build
+```
+
+The live Neon verification tests use `DATABASE_URL` or `DATABASE_URL_UNPOOLED`. When no database URL is configured, those live database tests are skipped; a passing local test run without database configuration is not a substitute for live database verification.
+
+---
+
+## Environment configuration
+
+Use `.env.example` as the authoritative variable-name template. The following server variables are relevant to the deployed hackathon experience:
+
+| Variable | Required for | Notes |
+|---|---|---|
+| `DATABASE_URL` | Runtime database access | Pooled Neon PostgreSQL connection |
+| `DATABASE_URL_UNPOOLED` | Migration and seed commands | Direct Neon connection |
+| `GEMINI_API_KEY` | Gemini extraction and voice transcription | Server-only secret |
+| `OPENROUTER_API_KEY` | Optional text-extraction fallback | Server-only secret; the fallback is not used for audio |
+| `MEDFLOW_DEMO_MODE_ENABLED` | Judge Access | Must be `true` on the intended demo deployment |
+| `MEDFLOW_DEMO_SESSION_SECRET` | Judge Access session signing | Server-only random secret, at least 32 characters |
+| `MEDFLOW_DEMO_SESSION_TTL_SECONDS` | Demo session lifetime | Optional; default is 7200 seconds |
+| `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE` | Public intake facility mapping | Defaults to `DEMO-CLINIC-01` |
+| `GEMINI_EXTRACTION_MODEL` | Gemini text extraction | Optional model override |
+| `GEMINI_TRANSCRIBE_MODEL` | Voice transcription | Optional model override |
+| `MAX_AUDIO_UPLOAD_BYTES` | Audio upload limit | Optional; default is 10 MiB |
+| `MAX_AUDIO_DURATION_SECONDS` | Recording duration limit | Optional; default is 90 seconds |
+
+Do not put server credentials in `NEXT_PUBLIC_*` variables. The tracked `firebase-applet-config.json` contains browser-side Firebase configuration, not Firebase Admin service-account credentials; review the Firebase API-key restrictions and authorised domains for the deployed application.
+
+### Vercel deployment
+
+Configure the required production variables in the Vercel project settings. In particular, verify:
+
+- `DATABASE_URL`
+- `GEMINI_API_KEY`
+- `OPENROUTER_API_KEY` (when fallback is enabled)
+- `MEDFLOW_DEMO_MODE_ENABLED=true`
+- `MEDFLOW_DEMO_SESSION_SECRET`
+- `NEXT_PUBLIC_DEMO_FACILITY_PUBLIC_CODE=DEMO-CLINIC-01`
+
+After changing environment variables, create a new deployment. A successful Vercel build/status check does not by itself prove that live database writes, Gemini calls or OpenRouter fallback work at runtime.
+
+---
+
+## Privacy and clinical limitations
+
+- Use synthetic names, ages, narratives and voice recordings only.
+- Do not use MedFlow for real patient care or emergencies.
+- Do not enter real patient data or audio.
+- AI summaries are drafts for human review, not diagnoses or clinical recommendations.
+- AI does not assign clinical priority or workflow status.
+- Staff actions remain separate from the original patient narrative and AI draft.
+- Voice recordings are processed for transcription and are not intended to be stored as raw audio.
+- OpenRouter is an external model-routing service. Use only synthetic demonstration content with the fallback. Provider availability, model selection, rate limits and data handling can vary.
+- Quote grounding establishes textual source matching, not clinical truth.
+- A real-world pilot would require clinical governance, validation, privacy/security review, vendor review and applicable regulatory assessment.
+
+See [SECURITY.md](SECURITY.md) and [Clinical Safety and Privacy](docs/07_CLINICAL_SAFETY_AND_PRIVACY.md).
+
+---
+
+## TCC Hackathon work and AI disclosure
+
+The participant guide requires the README to distinguish work completed during the official November 22–24 sprint from any pre-existing planning or assets. The implementation history and tool contributions are recorded in [docs/17_SPRINT_LOG_AND_AI_DISCLOSURE.md](docs/17_SPRINT_LOG_AND_AI_DISCLOSURE.md). The team should review that log against Git history before the final public submission and correct any dates or contributors that are inaccurate.
+
+AI assistance used in the project includes:
+
+- **Google AI Studio Build / Gemini:** application implementation, refactoring, debugging and test authoring.
+- **OpenAI ChatGPT:** product planning, implementation prompts, documentation, repository review and submission preparation.
+- **Gemini API:** runtime voice transcription and primary clinical-context extraction.
+- **OpenRouter:** optional runtime text-extraction fallback after Gemini attempts.
+
+List any additional tools used by team members in the sprint disclosure, with their actual contributions. Do not claim that AI tools independently establish clinical validation.
+
+---
+
+## Submission status
+
+The TCC participant guide requires a public source repository, a publicly accessible product demonstration video of **4:50–5:10**, and one official form submission. The video must demonstrate the real application, be publicly viewable, tag Tech Conference Calabar and include:
+
+- `#CTCHackathon2026`
+- `#TechConferenceCalabar`
+
+The official form is distributed through the organisers' WhatsApp group. Confirm the current form and instructions with the team lead before submission. See [docs/01_HACKATHON_RULES_AND_SCORECARD.md](docs/01_HACKATHON_RULES_AND_SCORECARD.md) and [docs/FINAL_SUBMISSION_READINESS.md](docs/FINAL_SUBMISSION_READINESS.md).
+
+---
+
+## Project status and ownership
+
+MedFlow is a working hackathon prototype and a working codename, not a cleared commercial brand. No clinical-validation, hospital-adoption, patient-outcome or production-care claims are made.
+
+No software licence file is currently included. Public repository visibility for judging does not, by itself, grant permission to reuse or redistribute the code.
