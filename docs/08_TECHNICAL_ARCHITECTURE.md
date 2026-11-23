@@ -1,5 +1,8 @@
 # MedFlow — Technical Architecture (Hackathon Baseline)
 
+> **Deployed hackathon implementation note (2026-11-23):** The current judge flow uses the server-signed Demo Clinical Staff session at `/demo` and opens `/staff/queue`. The public interface no longer offers normal Staff Sign-In or Administrator Workspace access; `/staff/login` redirects to `/demo` and `/staff/admin` redirects to `/staff/queue`. Backend authorization checks remain server-side. For text extraction, Gemini is primary, a Gemini fallback model is attempted next, and OpenRouter `openrouter/free` is optional fallback. Voice transcription remains Gemini-only.
+
+
 ## 1. Architecture objective
 
 Build a small, understandable full-stack **Next.js application** that supports the patient-to-clinician workflow, can be inspected in GitHub and can be deployed reliably. Keep the design commercially sensible without introducing microservices or unnecessary infrastructure.
@@ -18,7 +21,7 @@ The application framework is **Next.js with the App Router**. This is an explici
 | Authentication | Firebase Authentication (Google Sign-In + same-origin `/__/auth/*` proxy) | Staff identity is verified server-side via `firebase-admin` `verifyIdToken(token)` (no IAM required). Authentication alone grants zero clinical privileges. |
 | Database | **Neon PostgreSQL** (`pg` + Drizzle ORM + Drizzle Kit) — approved via `D-020` | Authoritative relational store for facilities, staff profiles, memberships, patient intakes, evidence rows, and append-only audit events. All reads/writes occur through server-side Next.js Route Handlers. *(Transitional Firestore files remain untouched during Phase 1D-1 until Phase 1D-3 decommissioning.)* |
 | Queue updates | Authenticated facility-scoped Route Handlers + visibility-aware polling (Phase 1D-2) | Replaces client-side Firestore `onSnapshot` listeners so no database credentials or direct DB connections ever reach the browser. |
-| AI extraction | Google Gemini API, called server-side | Strict schema validation; AI output is a non-authoritative draft triggered and persisted only through an authenticated, authorized staff session (`D-015`). |
+| AI extraction | Google Gemini API (primary) with Gemini model fallback and optional OpenRouter `openrouter/free` fallback | Text-only OpenRouter fallback; all output is parsed, validated with Zod and passed through the same exact-substring quote-grounding logic. AI output remains non-authoritative. |
 | Voice transcription | Gemini audio transcription through the currently supported official API/model | Verify exact model ID, API, audio format and limits from current official docs before implementation. |
 | Validation | Zod + PostgreSQL constraints & triggers | Validate every untrusted request and model response at runtime; enforce tenant isolation, immutability, staff-review consistency, and action-to-actor integrity in PostgreSQL. |
 | Tests | Node test runner (`node:test`), schema/constraint tests, integration and browser checks | Test business rules, DB invariants, authorization boundaries, and failure states. |
