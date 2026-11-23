@@ -9,6 +9,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   ClipboardList,
@@ -23,13 +24,17 @@ import {
   Menu,
   Mic,
   MicOff,
+  Minus,
   PencilLine,
+  Plus,
   Quote,
   RefreshCw,
   ScanText,
   Search,
   Send,
   ShieldAlert,
+  ShieldCheck,
+  Square,
   User,
   UserCheck,
   Users,
@@ -51,6 +56,7 @@ export type IconName =
   | "checkCircle"
   | "chevron"
   | "chevronDown"
+  | "chevronLeft"
   | "circleAlert"
   | "clipboard"
   | "clock"
@@ -65,6 +71,8 @@ export type IconName =
   | "menu"
   | "mic"
   | "micOff"
+  | "minus"
+  | "plus"
   | "pulse"
   | "quote"
   | "refresh"
@@ -72,6 +80,8 @@ export type IconName =
   | "search"
   | "send"
   | "shield"
+  | "shieldCheck"
+  | "square"
   | "user"
   | "userCheck"
   | "users"
@@ -93,6 +103,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   checkCircle: CheckCircle2,
   chevron: ChevronRight,
   chevronDown: ChevronDown,
+  chevronLeft: ChevronLeft,
   circleAlert: CircleAlert,
   clipboard: ClipboardList,
   clock: Clock,
@@ -107,6 +118,8 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   menu: Menu,
   mic: Mic,
   micOff: MicOff,
+  minus: Minus,
+  plus: Plus,
   pulse: Activity,
   quote: Quote,
   refresh: RefreshCw,
@@ -114,6 +127,8 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   search: Search,
   send: Send,
   shield: ShieldAlert,
+  shieldCheck: ShieldCheck,
+  square: Square,
   user: User,
   userCheck: UserCheck,
   users: Users,

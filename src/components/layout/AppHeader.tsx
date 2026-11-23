@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Badge, BrandMark, Button, ButtonLink, Icon } from "@/components/ui";
+import { useState } from "react";
+import { BrandMark, Button, ButtonLink, Icon } from "@/components/ui";
 import { CANONICAL_DEMO_FACILITY } from "@/db/invariants";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
 
 export function AppHeader() {
   const pathname = usePathname() ?? "/";
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const {
     status,
     authMode,
@@ -29,36 +32,29 @@ export function AppHeader() {
   const isAuthorized = status === "authorized" && activeFacility !== null;
   const isAdmin = activeFacility?.role === "admin";
 
-  // 1. Dedicated Patient Experience Header (/intake)
-  // Completely isolated from staff navigation, admin controls, and demo role switchers.
+  // 1. Focused Mobile-First Patient Header (/intake)
+  // Calm, minimal, free of staff controls or backend/developer identifiers.
   if (isPatientIntakeRoute) {
     return (
       <header
         className="border-b border-[var(--mf-border)] bg-[var(--mf-surface)]"
         data-testid="patient-top-bar"
       >
-        <div className="mx-auto flex max-w-[680px] flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/"
-              className="no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-focus)]"
-            >
-              <BrandMark subtitle="Patient Self-Intake" />
-            </Link>
-            <Badge tone="neutral" className="mf-mono">
-              {CANONICAL_DEMO_FACILITY.publicCode}
-            </Badge>
-          </div>
+        <div className="mx-auto flex h-14 max-w-[540px] items-center justify-between gap-3 px-4 sm:px-6">
+          <Link
+            href="/"
+            className="shrink-0 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-focus)]"
+          >
+            <BrandMark size="sm" />
+          </Link>
 
-          <div className="flex items-center gap-2.5">
-            <span className="hidden text-[12px] font-medium text-[var(--mf-text-secondary)] sm:inline">
-              Synthetic clinic demo · No account needed
-            </span>
-            <ButtonLink href="/" variant="secondary" size="sm">
-              <Icon name="arrowLeft" size="sm" />
-              Exit to Home
-            </ButtonLink>
-          </div>
+          <Link
+            href="/"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-[6px] px-2.5 text-[13.5px] font-semibold text-[var(--mf-text-secondary)] no-underline transition-colors hover:bg-[var(--mf-surface-subtle)] hover:text-[var(--mf-text)]"
+          >
+            <Icon name="arrowLeft" size="sm" />
+            Exit
+          </Link>
         </div>
       </header>
     );
@@ -143,33 +139,42 @@ export function AppHeader() {
     );
   }
 
-  // 3. Public & Entry Surfaces Header (/, /demo, /staff/login)
+  // 3. Public & Entry Navigation (/, /demo, /staff/login)
   const isStaffLogin = pathname.startsWith("/staff/login");
   const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
 
   return (
     <header
-      className="mf-dash__top px-4 sm:px-6"
+      className="sticky top-0 z-30 bg-[var(--mf-navy-900)] text-[var(--mf-navy-text)] border-b-[3px] border-[var(--mf-primary)]"
       data-testid="public-top-bar"
     >
-      <div className="mx-auto flex w-full max-w-[1160px] items-center justify-between gap-2">
+      <div className="mx-auto flex h-14 max-w-[1160px] items-center justify-between gap-3 px-4 sm:px-6">
         <Link
           href="/"
-          className="shrink-0 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-primary-light)]"
+          onClick={() => setMobileMenuOpen(false)}
+          className="shrink-0 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--mf-focus-on-dark)]"
         >
           <BrandMark onDark size="sm" />
         </Link>
 
+        {/* Desktop navigation */}
         <nav
           aria-label="Primary navigation"
-          className="flex shrink-0 items-center gap-1.5 sm:gap-2"
+          className="hidden items-center gap-1.5 sm:flex"
         >
+          <Link
+            href="/intake"
+            className="inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] px-3 py-1.5 text-[13.5px] font-medium text-[var(--mf-navy-text)] no-underline transition-colors hover:bg-[var(--mf-navy-800)] hover:text-white"
+          >
+            Patient Intake
+          </Link>
+
           <Link
             href="/staff/login"
             aria-current={isStaffLogin ? "page" : undefined}
-            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] px-2.5 py-1.5 text-[13px] font-medium no-underline transition-colors sm:px-3 ${
+            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] px-3 py-1.5 text-[13.5px] font-medium no-underline transition-colors ${
               isStaffLogin
-                ? "bg-[var(--mf-navy-700)] text-white"
+                ? "bg-[var(--mf-navy-700)] text-white font-semibold"
                 : "text-[var(--mf-navy-text)] hover:bg-[var(--mf-navy-800)] hover:text-white"
             }`}
           >
@@ -179,16 +184,90 @@ export function AppHeader() {
           <Link
             href="/demo"
             aria-current={isDemoRoute ? "page" : undefined}
-            className={`inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] border px-3 py-1.5 text-[13px] font-semibold no-underline transition-colors ${
+            className={`ml-1 inline-flex min-h-[38px] items-center whitespace-nowrap rounded-[4px] border px-3.5 py-1.5 text-[13.5px] font-semibold no-underline transition-colors ${
               isDemoRoute
                 ? "border-[var(--mf-primary)] bg-[var(--mf-primary)] text-white"
-                : "border-[var(--mf-navy-700)] bg-[var(--mf-navy-800)] text-white hover:border-[var(--mf-primary)] hover:bg-[var(--mf-navy-700)]"
+                : "border-[var(--mf-primary-light)]/50 bg-[var(--mf-navy-800)] text-white hover:border-[var(--mf-primary-light)] hover:bg-[var(--mf-navy-700)]"
             }`}
           >
             Demo
           </Link>
         </nav>
+
+        {/* Compact single-row mobile controls */}
+        <div className="flex items-center gap-2 sm:hidden">
+          <Link
+            href="/demo"
+            aria-current={isDemoRoute ? "page" : undefined}
+            onClick={() => setMobileMenuOpen(false)}
+            className={`inline-flex min-h-[36px] items-center rounded-[4px] border px-3 text-[13px] font-semibold no-underline transition-colors ${
+              isDemoRoute
+                ? "border-[var(--mf-primary)] bg-[var(--mf-primary)] text-white"
+                : "border-[var(--mf-primary-light)]/45 bg-[var(--mf-navy-800)] text-white"
+            }`}
+          >
+            Demo
+          </Link>
+
+          <button
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-public-nav"
+            aria-label={mobileMenuOpen ? "Close menu" : "Open navigation menu"}
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[4px] border border-[var(--mf-navy-700)] bg-[var(--mf-navy-800)] px-2.5 text-[13px] font-medium text-white transition-colors hover:bg-[var(--mf-navy-700)]"
+          >
+            <Icon name={mobileMenuOpen ? "x" : "menu"} size="sm" />
+            <span>Menu</span>
+          </button>
+        </div>
       </div>
+
+      {/* Compact mobile drawer */}
+      {mobileMenuOpen && (
+        <nav
+          id="mobile-public-nav"
+          aria-label="Mobile navigation"
+          className="border-t border-[var(--mf-navy-700)] bg-[var(--mf-navy-800)] px-4 py-3 sm:hidden"
+        >
+          <div className="grid gap-1.5">
+            <Link
+              href="/intake"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex min-h-[44px] items-center justify-between rounded-[4px] px-3 text-[14px] font-semibold text-white no-underline hover:bg-[var(--mf-navy-700)]"
+            >
+              <span>Patient Intake</span>
+              <Icon name="arrow" size="sm" />
+            </Link>
+            <Link
+              href="/staff/login"
+              aria-current={isStaffLogin ? "page" : undefined}
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex min-h-[44px] items-center justify-between rounded-[4px] px-3 text-[14px] font-medium no-underline hover:bg-[var(--mf-navy-700)] ${
+                isStaffLogin
+                  ? "bg-[var(--mf-navy-700)] text-white font-semibold"
+                  : "text-[var(--mf-navy-text)]"
+              }`}
+            >
+              <span>Staff Sign-In</span>
+              <Icon name="lock" size="sm" />
+            </Link>
+            <Link
+              href="/demo"
+              aria-current={isDemoRoute ? "page" : undefined}
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex min-h-[44px] items-center justify-between rounded-[4px] px-3 text-[14px] font-medium no-underline hover:bg-[var(--mf-navy-700)] ${
+                isDemoRoute
+                  ? "bg-[var(--mf-primary)] text-white font-semibold"
+                  : "text-[var(--mf-navy-text)]"
+              }`}
+            >
+              <span>Explore Demo</span>
+              <Icon name="shieldCheck" size="sm" />
+            </Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

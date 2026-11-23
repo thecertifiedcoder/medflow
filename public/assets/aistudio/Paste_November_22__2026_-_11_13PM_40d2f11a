@@ -1,0 +1,1206 @@
+MedFlow — Complete UX/UI Redesign
+
+Landing Page, Patient Intake Experience and Hackathon Demo Access
+
+You are working on the existing MedFlow repository.
+
+This task authorizes a substantial frontend redesign of three existing routes:
+
+- "/" — Public landing page
+- "/intake" — Patient self-intake
+- "/demo" — Hackathon demo access
+
+The objective is to make MedFlow feel like a carefully designed, modern healthcare technology product, with an exceptionally clear and easy-to-use experience.
+
+This is not a request for minor visual adjustments. Rethink the information architecture, page composition, interaction patterns, progressive disclosure, responsive behaviour and visual hierarchy.
+
+The existing functionality, security boundaries, database architecture and clinical safety rules must remain intact.
+
+Do not start Milestone 3. Do not add new product features unrelated to this redesign.
+
+---
+
+1. FIRST: STUDY THE EXISTING DESIGN SYSTEM
+
+The standalone MedFlow design-system HTML is the authoritative visual reference.
+
+Before making any changes:
+
+1. Locate and inspect the complete design-system HTML provided in the project or attached to this workspace.
+2. Study its actual colours, typography, backgrounds, spacing, component dimensions, border treatments, radii, shadows, gradients, buttons, inputs, cards, icons and interaction patterns.
+3. Inspect its examples and component combinations.
+4. Inspect the current implementation of "/", "/intake" and "/demo".
+5. Inspect their shared components and existing responsive styles.
+
+The design-system HTML is the source of truth. Do not substitute it with a generic healthcare design system or invent a new visual identity.
+
+If the authoritative HTML cannot be found, do not guess its colours or components. Report the missing reference before proceeding with visual implementation.
+
+Design direction
+
+The result should feel:
+
+- Modern and polished.
+- Calm, confident and trustworthy.
+- Human-centred.
+- Premium without feeling unnecessarily complicated.
+- Visually distinctive rather than like a generic SaaS dashboard.
+- Consistent across desktop and mobile.
+- Like a finished application, not a collection of default UI components.
+
+Use the existing design-system components intelligently. The goal is not to use every available component everywhere. Use the right components in the right places.
+
+Do not make everything a white rectangular card. Vary composition, spacing, visual hierarchy, backgrounds and emphasis in ways supported by the design system.
+
+Use intentional visual composition, strong typography, refined spacing, subtle motion where appropriate and meaningful visual details.
+
+Do not use random gradients, arbitrary colours, excessive borders, unnecessary decorative icons or generic AI-generated illustrations.
+
+---
+
+2. GLOBAL UX PRINCIPLES
+
+Apply these principles across all three routes.
+
+A. Reduce cognitive load
+
+Users should not have to understand the internal architecture of MedFlow to use it.
+
+Remove unnecessary technical explanations, implementation details, excessive disclaimers and repeated descriptions.
+
+Every visible section must serve a clear user need.
+
+B. Progressive disclosure
+
+Show people only the information and controls they need at the current stage.
+
+Do not put an entire workflow on one long page when it can be separated into simple steps.
+
+C. Clear hierarchy
+
+Every screen should have:
+
+- One clear heading.
+- One short explanation where necessary.
+- One primary action.
+- Secondary actions that are visually less prominent.
+
+Avoid several competing CTAs.
+
+D. Consistency
+
+Use consistent typography, spacing, buttons, input states, progress indicators, feedback messages and transitions.
+
+E. Mobile-first, not desktop-shrunken
+
+The patient intake should feel like a real mobile application.
+
+Design for a 360–390px mobile viewport first. Then adapt it for tablets and desktop.
+
+Do not simply shrink a desktop form onto a phone.
+
+F. Accessibility
+
+Ensure:
+
+- Proper field labels.
+- Keyboard navigation.
+- Visible focus states.
+- Appropriate contrast.
+- Screen-reader-friendly descriptions.
+- Accessible recording states.
+- Reduced-motion support.
+- Large enough touch targets.
+- Clear validation and error messages.
+
+---
+
+3. ROUTE ONE: REDESIGN THE LANDING PAGE "/"
+
+Current problem
+
+The current landing page was simplified too aggressively.
+
+Although the page became less cluttered, it lost too much of the visual identity, component richness and design quality available in the MedFlow design system.
+
+We want simplicity in communication, not simplicity through visual emptiness.
+
+The landing page should look like a serious, well-designed product.
+
+Proposed direction
+
+Create a visually compelling landing page that immediately communicates what MedFlow does.
+
+It should feel like the front page of a product that has been deliberately designed, not a simple page containing a heading and two buttons.
+
+Section 1: Navigation
+
+Create a refined navigation bar that follows the design system.
+
+Include:
+
+- MedFlow brand.
+- Patient Intake.
+- Staff Sign-In.
+- Demo access.
+
+Keep the navigation compact and intentional.
+
+On mobile, use an appropriate compact navigation treatment. Do not let navigation controls compete with the hero.
+
+Section 2: Hero
+
+This is the most important section.
+
+Create a strong hero with a carefully balanced two-part composition.
+
+Left side: Messaging
+
+Use a headline that clearly communicates the product's value.
+
+Suggested direction:
+
+"Patient intake, made clearer."
+
+Supporting copy:
+
+"MedFlow helps clinical teams capture what patients say, organise the important details and review AI-assisted summaries while keeping the patient's original words intact."
+
+Primary CTA:
+
+"Start Patient Intake"
+
+Destination: "/intake"
+
+Secondary CTA:
+
+"Explore Demo"
+
+Destination: "/demo"
+
+The messaging can be improved, but it must remain truthful to the existing product.
+
+Do not describe MedFlow as an AI doctor, diagnostic engine or autonomous triage system.
+
+Right side: Product visual
+
+Do not leave the hero visually empty.
+
+Create an attractive, realistic product-interface composition using actual MedFlow design-system components.
+
+The visual should demonstrate the central product idea:
+
+1. A patient provides a concern in their own words.
+2. MedFlow produces a structured AI-assisted summary.
+3. Supporting quotations connect the summary to the original statement.
+4. A clinical professional reviews the information.
+
+Possible visual composition:
+
+- A patient narrative card.
+- A structured summary panel.
+- A highlighted source quotation connected visually to the relevant summary.
+- A clear human-review indicator.
+
+This should look like a polished product preview, not a generic illustration.
+
+Use synthetic example content only. Label it as an illustrative demonstration where necessary.
+
+Do not invent users, hospitals, statistics, performance metrics, testimonials or customer logos.
+
+The interface preview should be sufficiently attractive to communicate the product without overwhelming the hero.
+
+Section 3: How MedFlow works
+
+Introduce the product workflow in three visually distinct steps.
+
+01 — Patient shares their concern
+
+Patients can type or speak naturally.
+
+02 — MedFlow organises the information
+
+AI assists with structuring the patient's account and linking extracted details to supporting quotations.
+
+03 — Clinical staff review
+
+A nurse or doctor reviews the original statement and AI-assisted summary, makes corrections where necessary and manages the workflow.
+
+Use appropriate components from the design system.
+
+Do not turn this into a long technical explanation.
+
+Section 4: Evidence Integrity Engine
+
+This is one of MedFlow's most important differentiators.
+
+Give it a distinctive visual presentation.
+
+Headline direction:
+
+"Every detail should have a source."
+
+Explain briefly that MedFlow connects extracted information to exact quotations from the patient's confirmed statement.
+
+Show an illustrative example:
+
+Patient statement:
+"I have had a headache since yesterday evening."
+
+Extracted detail:
+"Headache since yesterday evening."
+
+Supporting evidence:
+The exact quotation highlighted within the patient's statement.
+
+Make the relationship between the extracted detail and original quotation visually obvious.
+
+The section should communicate that unsupported information is not simply treated as fact. Unclear or missing information remains explicit for human review.
+
+Do not overstate the system's clinical reliability or claim it eliminates hallucinations.
+
+Section 5: Human oversight
+
+Communicate that MedFlow supports clinical professionals rather than replacing their judgment.
+
+Use a short, meaningful section.
+
+Suggested headline:
+
+"AI assists. People remain in control."
+
+Explain that clinical staff review information, make corrections, assign operational priority and manage workflow status.
+
+Use a visually compelling design-system component rather than another block of plain text.
+
+Section 6: Final CTA
+
+Create a strong closing section.
+
+Headline direction:
+
+"Start with the patient's story."
+
+Primary CTA: Start Patient Intake.
+
+Secondary CTA: Explore Demo.
+
+Section 7: Footer
+
+Keep it clean.
+
+Include appropriate product navigation and the synthetic-demonstration disclaimer.
+
+Avoid repeating the same links and messaging several times.
+
+Landing page acceptance criteria
+
+- The page looks substantially more polished than the current simplified version.
+- It uses the actual MedFlow design system.
+- The hero has a strong visual composition.
+- The product preview communicates the real workflow.
+- The page is visually rich without becoming cluttered.
+- Messaging is easy to understand.
+- No fake customer logos, metrics, testimonials or product capabilities.
+- All navigation destinations work.
+- Desktop and mobile layouts are intentionally designed.
+
+---
+
+4. ROUTE TWO: REBUILD THE PATIENT INTAKE EXPERIENCE "/intake"
+
+Current problem
+
+The current intake page is too complicated.
+
+It exposes too many sections, explanations, technical messages and controls simultaneously.
+
+Examples of unnecessary complexity include:
+
+- The long introductory explanation.
+- Multiple numbered sections displayed together.
+- Excessive instructions around voice recording.
+- Raw transcription information displayed to patients.
+- Technical model information.
+- Synthetic patient example controls.
+- Repeated explanations of what happens after submission.
+- Too many independent visual elements competing for attention.
+
+The current experience looks like a long form rather than a guided application.
+
+We want a genuinely simple, multi-step intake experience.
+
+Do not merely restyle the existing form. Rethink the entire user journey.
+
+New experience: A three-step guided application
+
+Use three focused steps:
+
+1. About You
+2. Tell Us What's Happening
+3. Review and Submit
+
+Only one step should be visible at a time.
+
+Use a clear progress indicator showing the current step and overall progress.
+
+Users must be able to go backward without losing their information.
+
+Do not display all three forms simultaneously.
+
+The entire experience should feel like a modern mobile app.
+
+---
+
+STEP 1 — ABOUT YOU
+
+Objective
+
+Collect optional identifying information without making the patient feel like they are completing an administrative form.
+
+Screen composition
+
+Create a calm, centred layout.
+
+At the top:
+
+- Small MedFlow brand.
+- Compact step progress indicator.
+- Clear heading.
+
+Suggested heading:
+
+"Let's get started."
+
+Supporting text:
+
+"Just a couple of details before you tell us what's happening."
+
+Name input
+
+Present a simple, elegant name input.
+
+Label:
+
+"What should we call you?"
+
+Placeholder:
+
+"Enter your name or preferred name"
+
+This field remains optional.
+
+It should be visually clean and easy to understand.
+
+Age input
+
+This is where I want a more thoughtful interaction.
+
+Do not use a conventional small input field placed beside the name field.
+
+Create a centred, square-style age selector.
+
+The age control should be visually prominent and sit in the middle of the screen.
+
+Design direction:
+
+- A square or near-square input surface.
+- A large, clearly visible numeric value.
+- A small "years old" or "years" label.
+- Simple increment and decrement controls.
+- Direct numeric keyboard entry must also work.
+- Maintain a sensible range of 0–120.
+- Do not automatically set the age to zero.
+- The user must be able to leave it blank.
+
+The control should look like a purposefully designed application component, not an HTML number input with default browser styling.
+
+The number should be visually centred.
+
+The control should have excellent touch interaction on mobile.
+
+Add a subtle optional indicator so the user understands these details are not compulsory.
+
+Actions
+
+Primary button:
+
+"Continue"
+
+Secondary text action:
+
+"Skip for now"
+
+Both actions proceed to Step 2.
+
+Interaction requirements
+
+- Validate age only when supplied.
+- Reject values outside the supported range.
+- Show short, understandable validation messages.
+- Do not add unnecessary fields such as date of birth, address, phone number or email.
+- Do not make personal details mandatory.
+
+The screen should feel light, focused and welcoming.
+
+---
+
+STEP 2 — TELL US WHAT'S HAPPENING
+
+This is the most important interaction in the patient experience.
+
+It should be designed extremely carefully.
+
+Objective
+
+Allow the patient to communicate their concern naturally, using either speech or text.
+
+Voice should be prominent because it is a key part of MedFlow.
+
+Screen composition
+
+Heading:
+
+"What brings you in today?"
+
+Supporting text:
+
+"Tell us in your own words. Take your time."
+
+Keep the screen visually clean.
+
+Do not show long technical descriptions, multiple example cards, database terminology or AI explanations.
+
+Input mode selection
+
+Give the patient two simple ways to continue:
+
+- Speak
+- Type
+
+Use a polished segmented selector or another appropriate existing design-system component.
+
+Both modes must be easy to discover.
+
+Voice should receive stronger visual emphasis without hiding the typing option.
+
+VOICE EXPERIENCE
+
+When Speak is selected, make the recording interaction the centrepiece of the screen.
+
+Create a large, beautiful circular recording control.
+
+It should be the main visual element.
+
+The circle should be centred and generously sized, with an appropriate icon and visual feedback.
+
+Do not use an ordinary rectangular record button.
+
+Idle state
+
+Display:
+
+A large circular microphone button.
+
+Below it:
+
+"Tap to start speaking"
+
+Small supporting text:
+
+"Speak naturally. You can review your words before submitting."
+
+The circle must clearly communicate that it is interactive.
+
+Recording state
+
+When the patient starts recording:
+
+- The circle changes into a clear recording state.
+- Show a recording indicator.
+- Display elapsed recording time.
+- Provide an obvious Stop Recording action.
+- Use subtle animated rings, waveform feedback or another design-system-compatible indicator.
+- Do not use distracting animation.
+- Respect reduced-motion preferences.
+
+The patient must always understand whether recording is active.
+
+Stopping state
+
+After the patient stops recording:
+
+- Display a short transcribing state.
+- Make it clear that MedFlow is processing the audio.
+- Prevent accidental repeated submissions.
+- Provide a sensible timeout and error state.
+
+Transcript review state
+
+After successful transcription, transition the screen into a clean transcript editor.
+
+Heading:
+
+"Here's what we heard."
+
+Supporting text:
+
+"Review your words and make any corrections before continuing."
+
+Display the transcript in a beautiful, editable text area.
+
+The transcript must be editable.
+
+Provide two clear actions:
+
+- Record Again
+- Continue
+
+If the patient chooses Record Again, start a fresh recording without losing other intake details.
+
+Do not expose the internal "transcript_raw", model name, model ID, audio MIME details or backend processing information.
+
+Preserve all required raw and confirmed transcript data internally.
+
+The patient should see only what they need.
+
+Microphone unavailable or denied
+
+If recording is not possible:
+
+Display a friendly, non-technical message.
+
+Suggested copy:
+
+"Microphone access isn't available right now. You can type your concern instead."
+
+Provide an obvious route to the Type experience.
+
+Never trap the patient in voice mode.
+
+TYPED EXPERIENCE
+
+When Type is selected, display a clean writing interface.
+
+Heading:
+
+"Write what brings you in."
+
+Supporting text:
+
+"Tell us what you've been experiencing in your own words."
+
+Use a generous, readable text area with a clear placeholder:
+
+"Start typing here..."
+
+A subtle writing hint may say:
+
+"You can include when it started, how it feels and anything else you want the care team to know."
+
+Do not make the field look like a dense medical questionnaire.
+
+Do not split the patient's story into separate symptom questions.
+
+Keep the patient's ability to describe their concern freely.
+
+Provide:
+
+- Continue
+- Switch to Speak
+
+The patient must be able to change modes without losing text already entered.
+
+IMPORTANT: REMOVE THESE FROM THE NORMAL PATIENT INTERFACE
+
+Remove the visible synthetic patient example selector from the normal patient workflow.
+
+Remove:
+
+- Example 1, Example 2, Example 3.
+- Clear fields control.
+- Original raw voice transcript display.
+- Model identification.
+- Technical transcription explanations.
+- Repeated instructions.
+- Excessive helper text.
+- Long descriptions of the backend process.
+
+These details either belong in development/testing utilities or internal documentation.
+
+Do not remove the underlying test fixtures or synthetic scenarios from the repository.
+
+Input validation
+
+- Do not allow an empty concern to proceed.
+- Preserve typed content when switching modes.
+- Preserve transcript edits.
+- Preserve the raw transcription separately in the existing data model.
+- Do not automatically alter a patient's confirmed wording.
+- Continue to enforce existing character limits and server-side validation.
+
+---
+
+STEP 3 — REVIEW AND SUBMIT
+
+Objective
+
+Give the patient a final opportunity to verify what they are about to submit.
+
+Make this screen feel reassuring and straightforward.
+
+Heading:
+
+"Review your information."
+
+Supporting text:
+
+"Please make sure everything looks right before sending."
+
+Layout
+
+Display a simple summary containing:
+
+Your details
+
+Name or anonymous designation.
+
+Age, if supplied.
+
+Your statement
+
+Show the full confirmed patient narrative in a readable presentation.
+
+Provide an Edit action that returns to Step 2 without losing information.
+
+Confirmation
+
+Include one clear confirmation checkbox.
+
+Suggested wording:
+
+"I confirm that this is an accurate statement of what I want the clinic staff to read."
+
+Keep the synthetic-demonstration disclaimer nearby but visually secondary.
+
+Make it clear that this is a demonstration prototype and not a replacement for real clinical care.
+
+Submit action
+
+Primary CTA:
+
+"Submit Intake"
+
+Do not use overly technical button labels.
+
+While submission is processing:
+
+- Show a clear loading state.
+- Prevent duplicate submissions.
+- Preserve the form state if a recoverable error occurs.
+- Display understandable error feedback.
+
+Success state
+
+After a successful submission, do not leave the patient on the form.
+
+Create a polished completion screen.
+
+Suggested heading:
+
+"Your information has been saved."
+
+Supporting text:
+
+"Your demonstration intake has been recorded."
+
+Display the generated patient reference in a visually distinct, easily readable component.
+
+Provide a simple completion action:
+
+"Done"
+
+Optionally allow the user to start another synthetic demonstration intake.
+
+Do not claim that a real hospital or clinical team has received the information. This is a synthetic hackathon demonstration.
+
+---
+
+5. INTAKE SAFETY AND UX REQUIREMENTS
+
+The emergency notice must remain visible and understandable, but it should not dominate the entire page or interrupt every step with excessive copy.
+
+Use a compact, clear safety banner.
+
+Suggested copy:
+
+"Need urgent medical help? Please alert clinic staff directly. Do not wait to complete this form."
+
+The existing emergency guidance must remain intact in substance.
+
+Do not remove the warning about severe symptoms or imply that MedFlow can assess emergencies.
+
+Also preserve:
+
+- Synthetic demonstration notice.
+- No real patient information instruction.
+- No diagnostic or treatment claims.
+- The fact that clinical staff, not AI, control operational review decisions.
+
+The intake must never imply that successfully submitting the form makes it safe to wait.
+
+Technical behaviour that must remain intact
+
+This is a frontend redesign, not a rewrite of the backend.
+
+Preserve the existing:
+
+- "POST /api/intakes/transcribe"
+- "POST /api/intakes"
+- "POST /api/intakes/[intakeId]/extract"
+- Audio recording and transcription logic.
+- Gemini extraction.
+- Raw transcript preservation.
+- Patient-confirmed narrative.
+- Narrative immutability and SHA-256 integrity.
+- Evidence grounding.
+- Idempotency.
+- Audit event creation.
+- Existing database contracts.
+- Existing security validation.
+
+Do not change the database schema or API contracts simply to make the redesign easier.
+
+The patient must still review and confirm their statement before submission.
+
+The AI extraction workflow must still run as it does currently.
+
+Failed AI extraction must not destroy or prevent persistence of a successfully submitted intake.
+
+---
+
+6. ROUTE THREE: REDESIGN THE DEMO PAGE "/demo"
+
+Current problem
+
+The demo access page contains too much information that is irrelevant to someone trying to enter the demonstration.
+
+It currently exposes:
+
+- Internal identity IDs.
+- Role implementation details.
+- Facility IDs and slugs.
+- Endpoint lists.
+- HTTP 403 explanations.
+- Cookie and authorization implementation descriptions.
+- Repeated descriptions of the synthetic authentication architecture.
+- Long technical explanations of what each workspace does.
+
+These details are useful to developers, but not to judges.
+
+The demo page should make one thing easy:
+
+Choose a workspace and enter the demonstration.
+
+New design direction
+
+Create a polished, simple Hackathon Demo Access page.
+
+Heading:
+
+"Explore MedFlow."
+
+Supporting text:
+
+"Choose a workspace to see how MedFlow supports patient intake and clinical review."
+
+Display one compact environment indicator:
+
+"Demo environment · Synthetic data only"
+
+Role selection
+
+Present two clearly differentiated workspace options.
+
+Card 1: Clinical Staff
+
+This should be the primary and visually emphasized option.
+
+Title:
+
+"Clinical Staff"
+
+Description:
+
+"Review patient intakes, examine AI-assisted summaries and manage the clinical workflow."
+
+Action:
+
+"Enter Clinical Workspace"
+
+Destination:
+
+"/staff/queue"
+
+This is the most important workspace for demonstrating the MedFlow product.
+
+Card 2: Administrator
+
+Title:
+
+"Administrator"
+
+Description:
+
+"Explore the demonstration facility overview and administrative workspace."
+
+Action:
+
+"Enter Admin Workspace"
+
+Destination:
+
+"/staff/admin"
+
+Use visual hierarchy to guide judges towards Clinical Staff first without hiding administrator access.
+
+Do not make either role look like an ordinary login form.
+
+These are one-click demo access options.
+
+Active session state
+
+The existing application may already have an active demo session.
+
+Handle this intelligently.
+
+When a session is already active:
+
+- Do not display confusing duplicated authentication controls.
+- Show a simple message identifying the active workspace.
+- Provide one prominent action to continue.
+- Provide a secondary option to switch workspace or sign out where currently supported.
+
+For example:
+
+"You're currently exploring as Demo Administrator."
+
+Primary CTA:
+
+"Open Administrator Workspace"
+
+The user should not have to understand how demo cookies or server-side sessions work.
+
+Secondary navigation
+
+Provide restrained access to:
+
+- Patient Intake.
+- Normal Staff Sign-In.
+- Return Home.
+
+These must not compete with the main workspace selection.
+
+Remove from visible UI
+
+Remove the following technical details from the normal demo page:
+
+- "demo-admin-01".
+- "demo-staff-01".
+- Internal role implementation information.
+- "demo-clinic-01".
+- API endpoint lists.
+- HTTP status-code explanations.
+- Cookie implementation descriptions.
+- Tenant authorization explanations.
+- Detailed backend session architecture.
+- Repeated synthetic-clinic identity descriptions.
+
+These are engineering details. Keep the necessary information in the technical documentation and README.
+
+Do not remove the actual demo authorization mechanisms.
+
+Preserve functionality
+
+Do not change:
+
+- Demo administrator authentication.
+- Demo clinical staff authentication.
+- Server-signed session cookies.
+- PostgreSQL membership checks.
+- Role separation.
+- RBAC.
+- CSRF and same-origin validation.
+- Logout behaviour.
+- Existing route protection.
+- Existing session state logic.
+
+The redesign must use the existing working authentication flow.
+
+---
+
+7. VISUAL AND INTERACTION QUALITY
+
+The redesign should not feel like a basic HTML form with a new colour scheme.
+
+Make intentional decisions about:
+
+- Typography hierarchy.
+- Component proportions.
+- Whitespace.
+- Alignment.
+- Responsive layouts.
+- Button dimensions.
+- Input states.
+- Hover, active, focused and disabled states.
+- Loading states.
+- Empty states.
+- Error states.
+- Recording animations.
+- Step transitions.
+- Visual feedback after actions.
+
+Use the exact visual language of the existing design system.
+
+Intake transition behaviour
+
+Use subtle transitions between the three steps.
+
+The transitions should make the experience feel like an application without making it slow.
+
+Avoid unnecessarily elaborate animations.
+
+The user should always know:
+
+- Where they are.
+- What they need to do.
+- What happens next.
+- How to go back.
+
+Mobile layout
+
+Mobile is the primary experience for patient intake.
+
+Test at minimum:
+
+- 360 × 800.
+- 390 × 844.
+- 430 × 932.
+
+Ensure:
+
+- No horizontal overflow.
+- No tiny controls.
+- No excessively long scrolling.
+- The circular recording button is comfortably reachable.
+- The main CTA is easy to reach.
+- The step indicator remains readable.
+- The keyboard does not cover important controls.
+- The age selector works comfortably with touch and numeric keyboard input.
+- There is sufficient space for the transcript editor.
+
+Desktop layout
+
+Test at minimum:
+
+- 1280 × 800.
+- 1440 × 900.
+
+The pages should not simply stretch mobile components across a large display.
+
+Use appropriate maximum content widths and purposeful composition.
+
+---
+
+8. IMPLEMENTATION RULES
+
+Before editing, create a checkpoint.
+
+Inspect the current route components, shared layout, relevant styles, API integrations and design-system reference.
+
+Then implement the redesign.
+
+You may reorganise the frontend components where doing so improves maintainability.
+
+However:
+
+1. Do not rewrite working backend services.
+2. Do not change database tables or migrations.
+3. Do not weaken authentication or authorization.
+4. Do not introduce new authentication flows.
+5. Do not replace Firebase Auth or Neon PostgreSQL.
+6. Do not remove any existing patient intake functionality.
+7. Do not remove any clinical safety controls.
+8. Do not introduce additional dependencies unless genuinely necessary.
+9. Do not modify unrelated staff workspace pages unless a shared component change requires it.
+10. Do not redesign the application using an unrelated visual system.
+
+Keep code modular.
+
+Avoid putting the entire multi-step intake application into one enormous component.
+
+Use reusable components where appropriate, such as:
+
+- IntakeProgress.
+- PatientDetailsStep.
+- AgeSelector.
+- NarrativeStep.
+- VoiceRecorder.
+- TranscriptEditor.
+- IntakeReviewStep.
+- IntakeSuccess.
+- DemoWorkspaceCard.
+
+These are suggested responsibilities, not mandatory component names.
+
+Keep business logic and API interactions separate from presentation as much as the existing architecture allows.
+
+---
+
+9. REGRESSION AND VERIFICATION REQUIREMENTS
+
+The previous Milestone 2 and UX-1 functionality has already been verified.
+
+The redesign must not reintroduce regressions.
+
+After implementation, run the existing project checks:
+
+- TypeScript typecheck.
+- Test suite.
+- Lint.
+- Production build.
+
+The previous baseline was:
+
+- 77 passing tests.
+- 0 failures.
+- 0 skipped.
+- Typecheck passing.
+- Production build passing.
+- Lint passing with one pre-existing unused-import warning in "src/lib/db/staff-repository.ts".
+
+Do not weaken, delete or bypass existing tests to make the redesign pass.
+
+Add or update tests for new frontend behaviour as necessary.
+
+Required browser verification
+
+Landing page
+
+- Navigation works.
+- Patient Intake CTA opens "/intake".
+- Demo CTA opens "/demo".
+- Responsive layouts work.
+- No console errors.
+- Design is consistent with the design-system HTML.
+
+Patient intake
+
+Complete a fresh synthetic intake through the actual browser UI.
+
+Verify:
+
+1. Name entry.
+2. Age selector.
+3. Skipping optional details.
+4. Moving between steps.
+5. Returning to previous steps without losing data.
+6. Typed concern submission.
+7. Voice recording.
+8. Stop and transcribe.
+9. Transcript editing.
+10. Switching between type and voice.
+11. Microphone unavailable fallback.
+12. Final review and confirmation.
+13. Successful submission.
+14. Correct reference generation.
+15. Persistence in Neon.
+16. Gemini extraction.
+17. Staff queue visibility.
+18. Audit history creation.
+
+Verify that raw transcription and confirmed narrative remain distinct where applicable.
+
+Verify that the redesigned frontend does not bypass the existing clinical safety or narrative-integrity controls.
+
+Demo page
+
+Verify:
+
+- Administrator entry.
+- Clinical Staff entry.
+- Correct destination for each.
+- Existing active-session display.
+- Session switching and logout where applicable.
+- Administrator and nurse role separation.
+- Existing authorization checks.
+
+Important testing rule
+
+Do not claim voice functionality is verified merely because the voice button renders.
+
+Perform an actual browser recording and transcription test using the available synthetic audio-testing setup.
+
+Do not claim backend persistence without verifying it.
+
+Clearly distinguish browser-tested behaviour, automated tests and any checks that could not be completed.
+
+---
+
+10. SCOPE CONTROL
+
+This authorization covers only the redesign of:
+
+- "/"
+- "/intake"
+- "/demo"
+
+Shared public layout components may be updated as required.
+
+Do not start Milestone 3.
+
+Do not add:
+
+- New patient management capabilities.
+- New AI features.
+- New database capabilities.
+- New clinical decision-making functionality.
+- New analytics.
+- New authentication providers.
+- New billing features.
+- Additional product modules.
+
+Do not spend time polishing unrelated screens while these three experiences are being redesigned.
+
+---
+
+11. FINAL DELIVERABLE
+
+When implementation is complete, provide a detailed report containing:
+
+1. Design-system reference inspected and how it was applied.
+2. Major changes to the landing page.
+3. Major changes to the intake journey.
+4. Major changes to the demo page.
+5. New or modified frontend components.
+6. All existing backend functionality preserved.
+7. Test results.
+8. Browser verification results.
+9. Responsive viewport results.
+10. Any known limitations or outstanding issues.
+
+Include screenshots of the redesigned:
+
+- Landing page.
+- Intake Step 1.
+- Intake Step 2 in voice mode.
+- Intake Step 2 in typing mode.
+- Intake Step 3.
+- Intake success screen.
+- Demo access page.
+
+Show at least mobile and desktop versions of the most important screens.
+
+Do not stop after producing a design proposal or implementation plan. Complete the actual redesign, run the checks and provide the final report.
+
+Stop after this scope is complete and await founder review. Do not proceed to another milestone automatically.

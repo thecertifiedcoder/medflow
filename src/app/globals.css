@@ -1357,3 +1357,40 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Redesigned Patient Intake & Public Surface utilities */
+.mf-step-enter {
+  animation: mf-rise var(--mf-dur-standard) var(--mf-ease);
+}
+
+@keyframes mf-voice-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(8, 126, 139, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(8, 126, 139, 0);
+  }
+}
+
+.mf-voice-halo {
+  animation: mf-voice-ring var(--mf-dur-pulse) var(--mf-ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-step-enter,
+  .mf-voice-halo {
+    animation: none;
+  }
+}
+
+.mf-age-field::-webkit-outer-spin-button,
+.mf-age-field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.mf-age-field {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+

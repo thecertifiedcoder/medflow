@@ -1,22 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  Alert,
-  Badge,
-  Button,
-  ButtonLink,
-  ClinicalPanel,
-  Icon,
-} from "@/components/ui";
+import { Alert, Button, ButtonLink, Icon } from "@/components/ui";
 import { useStaffAuth } from "@/lib/firebase/staff-auth";
 import type { DemoPersona } from "@/lib/schemas/staff-api";
+import { DemoWorkspaceCard } from "./DemoWorkspaceCard";
 
 export interface DemoAccessLauncherProps {
   readonly demoModeEnabled: boolean;
   readonly demoModeReady: boolean;
-  readonly facilityPublicCode: string;
 }
 
 const PERSONA_LABELS: Record<DemoPersona, string> = {
@@ -32,7 +26,6 @@ const PERSONA_DESTINATIONS: Record<DemoPersona, string> = {
 export function DemoAccessLauncher({
   demoModeEnabled,
   demoModeReady,
-  facilityPublicCode,
 }: DemoAccessLauncherProps) {
   const router = useRouter();
   const {
@@ -40,7 +33,6 @@ export function DemoAccessLauncher({
     authMode,
     demoPersona,
     activeFacility,
-    staffProfile,
     isDemoEntering,
     enteringDemoPersona,
     authNotice,
@@ -49,20 +41,23 @@ export function DemoAccessLauncher({
   } = useStaffAuth();
 
   const [actionError, setActionError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const isDemoAuthorized =
-    status === "authorized" && authMode === "demo" && demoPersona !== null;
+    status === "authorized" &&
+    authMode === "demo" &&
+    demoPersona !== null &&
+    activeFacility !== null;
   const isBusy = isDemoEntering || isSigningOut;
 
   const activeWorkspaceHref =
     activeFacility?.role === "admin" ? "/staff/admin" : "/staff/queue";
+  const otherPersona: DemoPersona =
+    demoPersona === "admin" ? "clinical_staff" : "admin";
 
   async function handleEnterDemo(persona: DemoPersona) {
     if (isBusy) return;
     setActionError(null);
-    setSuccessMessage(null);
 
     const result = await enterDemoSession(persona);
     if (!result.ok) {
@@ -71,9 +66,6 @@ export function DemoAccessLauncher({
     }
 
     const targetHref = PERSONA_DESTINATIONS[persona];
-    setSuccessMessage(
-      `${PERSONA_LABELS[persona]} session verified. Redirecting to ${targetHref}...`,
-    );
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     router.push(targetHref, { scroll: true });
   }
@@ -81,7 +73,6 @@ export function DemoAccessLauncher({
   async function handleSignOut() {
     if (isBusy) return;
     setActionError(null);
-    setSuccessMessage(null);
     setIsSigningOut(true);
     try {
       await signOutStaff();
@@ -92,287 +83,157 @@ export function DemoAccessLauncher({
 
   return (
     <section
-      aria-labelledby="demo-access-heading"
+      aria-label="Workspace selection"
       className="grid gap-6"
       data-testid="demo-access-launcher"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-[var(--mf-border)] bg-[var(--mf-surface)] px-4 py-3">
-        <div className="grid gap-0.5">
-          <h2
-            id="demo-access-heading"
-            className="mf-t-section m-0 text-[var(--mf-text)]"
-          >
-            Select a synthetic evaluation role
-          </h2>
-          <p className="m-0 text-[13px] text-[var(--mf-text-secondary)]">
-            Both demo personas authenticate through server-signed cookies and
-            resolve real PostgreSQL facility memberships in{" "}
-            <code className="mf-mono text-[12px] text-[var(--mf-text)]">
-              {facilityPublicCode}
-            </code>
-            .
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={demoModeReady ? "success" : "warning"} icon="shield">
-            {demoModeReady
-              ? "Demo Mode Active"
-              : demoModeEnabled
-                ? "Demo Setup Required"
-                : "Demo Mode Off"}
-          </Badge>
-          <Badge tone="neutral">Synthetic clinic only</Badge>
-        </div>
-      </div>
-
-      {actionError && (
-        <Alert tone="danger" title="Unable to start demo session">
+      {actionError ? (
+        <Alert tone="danger" title="Unable to open workspace">
           {actionError}
         </Alert>
-      )}
+      ) : null}
 
-      {successMessage && !actionError && (
-        <Alert tone="success" title="Demo session ready">
-          {successMessage}
-        </Alert>
-      )}
-
-      {authNotice && !actionError && !successMessage && (
-        <Alert tone="info" title="Session status">
+      {authNotice && !actionError ? (
+        <Alert tone="info" title="Session update">
           {authNotice}
         </Alert>
-      )}
+      ) : null}
 
-      {isDemoAuthorized && staffProfile && activeFacility && (
-        <Alert
-          tone="success"
-          title={`Active session: ${PERSONA_LABELS[demoPersona]}`}
+      {!demoModeEnabled ? (
+        <Alert tone="info" title="Demo workspaces are currently unavailable">
+          One-click demo workspaces are turned off in this environment. You can
+          still try Patient Intake or sign in with a clinic staff account.
+        </Alert>
+      ) : null}
+
+      {demoModeEnabled && !demoModeReady ? (
+        <Alert tone="warning" title="Demo setup incomplete">
+          This server is missing required demo configuration. Please contact the
+          demonstration host.
+        </Alert>
+      ) : null}
+
+      {/* Intelligent Active Session Panel OR Two-Card Workspace Chooser */}
+      {isDemoAuthorized && demoPersona ? (
+        <div
+          className="grid gap-5 rounded-[10px] border border-[var(--mf-primary)]/40 border-t-[4px] border-t-[var(--mf-primary)] bg-[var(--mf-surface)] p-6 sm:p-8"
+          data-testid="demo-active-session-panel"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              Signed in as <strong>{staffProfile.displayName}</strong> (role:{" "}
-              <code className="mf-mono text-[12px]">{activeFacility.role}</code>
-              ) in <strong>{activeFacility.facilityName}</strong> (
-              <code className="mf-mono text-[12px]">
-                {activeFacility.facilityPublicCode}
-              </code>
-              ).
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <ButtonLink
-                href={activeWorkspaceHref}
-                variant="primary"
-                size="sm"
-                data-testid="demo-open-active-workspace"
-              >
-                {activeFacility.role === "admin"
-                  ? "Open Administrator Workspace"
-                  : "Open Clinical Staff Queue"}
-                <Icon name="arrow" size="sm" />
-              </ButtonLink>
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={isSigningOut}
-                disabled={isBusy}
-                onClick={() => void handleSignOut()}
-                data-testid="demo-sign-out-btn"
-              >
-                Sign out
-              </Button>
+          <div className="grid gap-2">
+            <div className="inline-flex w-fit items-center gap-1.5 rounded-[4px] bg-[var(--mf-success-tint)] px-2.5 py-1 text-[12.5px] font-semibold text-[var(--mf-success-dark)]">
+              <Icon name="checkCircle" size="sm" />
+              <span>Active demo session</span>
             </div>
-          </div>
-        </Alert>
-      )}
 
-      {!demoModeEnabled && (
-        <Alert tone="info" title="Hackathon Demo Mode is currently disabled">
-          One-click demo sessions are disabled by server configuration. You can
-          still explore the public patient intake experience at{" "}
-          <code className="mf-mono text-[13px]">/intake</code> or sign in with a
-          provisioned Google staff account on{" "}
-          <code className="mf-mono text-[13px]">/staff/login</code>.
-        </Alert>
-      )}
+            <h2 className="m-0 text-[1.375rem] font-semibold leading-[1.25] text-[var(--mf-text)]">
+              You&apos;re currently exploring as {PERSONA_LABELS[demoPersona]}.
+            </h2>
 
-      {demoModeEnabled && !demoModeReady && (
-        <Alert
-          tone="warning"
-          title="Demo Mode configuration incomplete on server"
-        >
-          Hackathon Demo Mode is enabled, but the required server-only session
-          signing secret is missing. Demo access fails closed until server
-          configuration is completed.
-        </Alert>
-      )}
-
-      {/* Primary Two-Card Judge Role Selection */}
-      <div className="grid gap-5 md:grid-cols-2">
-        {/* 1. Enter as Demo Administrator */}
-        <ClinicalPanel
-          source="nurse"
-          sourceLabel="Administrator Role · /staff/admin"
-          title="Enter as Demo Administrator"
-          subtitle={`Identity: demo-admin-01 · Role: admin · Facility: ${facilityPublicCode}`}
-          action={
-            isDemoAuthorized && demoPersona === "admin" ? (
-              <Badge tone="success" icon="checkCircle">
-                Active Session
-              </Badge>
-            ) : (
-              <Badge tone="brand">Facility Governance</Badge>
-            )
-          }
-          className="flex flex-col"
-          bodyClassName="!flex flex-1 flex-col justify-between gap-5"
-        >
-          <div className="grid gap-3">
-            <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
-              Launch the dedicated <strong>Administrator Workspace</strong> (
-              <code className="mf-mono text-[12px]">/staff/admin</code>) to
-              inspect facility configuration, live PostgreSQL staff and intake
-              metrics, and role-separation boundaries.
+            <p className="m-0 max-w-[52ch] text-[14.5px] leading-[1.5] text-[var(--mf-text-secondary)]">
+              Continue straight into your workspace, or switch roles at any time.
             </p>
-            <dl className="mf-dl m-0">
-              <dt>Primary destination</dt>
-              <dd className="mf-mono text-[12px]">/staff/admin</dd>
-              <dt>Authorized endpoints</dt>
-              <dd className="mf-mono text-[12px]">
-                GET /api/staff/admin/facility &amp; GET /api/staff/intakes
-              </dd>
-              <dt>Tenant scope</dt>
-              <dd className="mf-mono text-[12px]">
-                demo-clinic-01 ({facilityPublicCode})
-              </dd>
-            </dl>
           </div>
 
-          <div className="pt-1">
-            <Button
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <ButtonLink
+              href={activeWorkspaceHref}
               variant="primary"
-              size="md"
-              fullWidth
-              loading={isDemoEntering && enteringDemoPersona === "admin"}
-              disabled={!demoModeReady || isBusy}
-              onClick={() => void handleEnterDemo("admin")}
-              data-testid="enter-demo-admin-btn"
+              size="lg"
+              data-testid="demo-open-active-workspace"
             >
-              {!(isDemoEntering && enteringDemoPersona === "admin") ? (
-                <Icon name="shield" size="btn" />
-              ) : null}
-              {isDemoEntering && enteringDemoPersona === "admin"
-                ? "Starting Demo Administrator..."
-                : isDemoAuthorized && demoPersona === "admin"
-                  ? "Continue to Administrator Workspace"
-                  : "Enter as Demo Administrator"}
-            </Button>
-          </div>
-        </ClinicalPanel>
+              {demoPersona === "admin"
+                ? "Open Administrator Workspace"
+                : "Open Clinical Workspace"}
+              <Icon name="arrow" size="btn" />
+            </ButtonLink>
 
-        {/* 2. Enter as Demo Clinical Staff */}
-        <ClinicalPanel
-          source="nurse"
-          sourceLabel="Clinical Staff Role · /staff/queue"
-          title="Enter as Demo Clinical Staff"
-          subtitle={`Identity: demo-staff-01 · Role: nurse · Facility: ${facilityPublicCode}`}
-          action={
-            isDemoAuthorized && demoPersona === "clinical_staff" ? (
-              <Badge tone="success" icon="checkCircle">
-                Active Session
-              </Badge>
-            ) : (
-              <Badge tone="info">Clinical Queue</Badge>
-            )
-          }
-          className="flex flex-col"
-          bodyClassName="!flex flex-1 flex-col justify-between gap-5"
-        >
-          <div className="grid gap-3">
-            <p className="mf-t-body-sm m-0 text-[var(--mf-text-secondary)]">
-              Launch the dedicated <strong>Clinical Staff Workspace</strong> (
-              <code className="mf-mono text-[12px]">/staff/queue</code>) to
-              inspect the facility intake queue, deterministic priority ordering,
-              and provenance-tagged intake detail view.
-            </p>
-            <dl className="mf-dl m-0">
-              <dt>Primary destination</dt>
-              <dd className="mf-mono text-[12px]">/staff/queue</dd>
-              <dt>Authorized endpoints</dt>
-              <dd className="mf-mono text-[12px]">
-                GET /api/staff/intakes &amp; GET /api/staff/intakes/[id]
-              </dd>
-              <dt>Role boundary</dt>
-              <dd className="text-[12px]">
-                Admin endpoint <code className="mf-mono">/api/staff/admin/facility</code>{" "}
-                returns HTTP 403
-              </dd>
-            </dl>
-          </div>
-
-          <div className="pt-1">
             <Button
               variant="secondary"
-              size="md"
-              fullWidth
-              loading={
-                isDemoEntering && enteringDemoPersona === "clinical_staff"
-              }
+              size="lg"
+              loading={isDemoEntering && enteringDemoPersona === otherPersona}
               disabled={!demoModeReady || isBusy}
-              onClick={() => void handleEnterDemo("clinical_staff")}
-              data-testid="enter-demo-staff-btn"
+              onClick={() => void handleEnterDemo(otherPersona)}
+              data-testid={
+                otherPersona === "admin"
+                  ? "enter-demo-admin-btn"
+                  : "enter-demo-staff-btn"
+              }
             >
-              {!(isDemoEntering && enteringDemoPersona === "clinical_staff") ? (
-                <Icon name="userCheck" size="btn" />
-              ) : null}
-              {isDemoEntering && enteringDemoPersona === "clinical_staff"
-                ? "Starting Demo Clinical Staff..."
-                : isDemoAuthorized && demoPersona === "clinical_staff"
-                  ? "Continue to Clinical Staff Queue"
-                  : "Enter as Demo Clinical Staff"}
+              {otherPersona === "admin"
+                ? "Switch to Administrator"
+                : "Switch to Clinical Staff"}
+            </Button>
+
+            <Button
+              variant="tertiary"
+              size="md"
+              loading={isSigningOut}
+              disabled={isBusy}
+              onClick={() => void handleSignOut()}
+              data-testid="demo-sign-out-btn"
+              className="sm:ml-auto"
+            >
+              Sign out
             </Button>
           </div>
-        </ClinicalPanel>
-      </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2">
+          <DemoWorkspaceCard
+            title="Clinical Staff"
+            description="Review patient intakes, examine AI-assisted summaries and manage the clinical workflow."
+            actionLabel="Enter Clinical Workspace"
+            loadingLabel="Opening Clinical Workspace..."
+            icon="userCheck"
+            emphasized
+            loading={isDemoEntering && enteringDemoPersona === "clinical_staff"}
+            disabled={!demoModeReady || isBusy}
+            testId="enter-demo-staff-btn"
+            onEnter={() => void handleEnterDemo("clinical_staff")}
+          />
 
-      {/* Additional Platform Journeys for Judges */}
-      <div className="grid gap-4 rounded-[6px] border border-[var(--mf-border)] bg-[var(--mf-surface-subtle)] p-4 sm:grid-cols-2">
-        <div className="flex flex-col justify-between gap-3">
-          <div>
-            <div className="text-[13px] font-semibold text-[var(--mf-text)]">
-              Want to inspect the public Patient Intake journey?
-            </div>
-            <p className="m-0 mt-1 text-[12.5px] text-[var(--mf-text-secondary)]">
-              Patients use a dedicated, mobile-first self-intake screen without
-              staff navigation or login walls.
-            </p>
-          </div>
-          <div>
-            <ButtonLink href="/intake" variant="secondary" size="sm">
-              <Icon name="clipboard" size="sm" />
-              Open Patient Intake (/intake)
-            </ButtonLink>
-          </div>
+          <DemoWorkspaceCard
+            title="Administrator"
+            description="Explore the demonstration facility overview and administrative workspace."
+            actionLabel="Enter Admin Workspace"
+            loadingLabel="Opening Admin Workspace..."
+            icon="shieldCheck"
+            loading={isDemoEntering && enteringDemoPersona === "admin"}
+            disabled={!demoModeReady || isBusy}
+            testId="enter-demo-admin-btn"
+            onEnter={() => void handleEnterDemo("admin")}
+          />
+        </div>
+      )}
+
+      {/* Restrained Secondary Navigation */}
+      <nav
+        aria-label="Other destinations"
+        className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[var(--mf-border)] pt-5 text-[13.5px]"
+      >
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <Link
+            href="/intake"
+            className="font-semibold text-[var(--mf-primary-dark)] no-underline hover:underline"
+          >
+            Patient Intake
+          </Link>
+          <Link
+            href="/staff/login"
+            className="font-medium text-[var(--mf-text-secondary)] no-underline hover:text-[var(--mf-text)] hover:underline"
+          >
+            Staff Sign-In
+          </Link>
         </div>
 
-        <div className="flex flex-col justify-between gap-3">
-          <div>
-            <div className="text-[13px] font-semibold text-[var(--mf-text)]">
-              Testing normal Firebase Google Sign-In?
-            </div>
-            <p className="m-0 mt-1 text-[12.5px] text-[var(--mf-text-secondary)]">
-              Provisioned clinic personnel authenticate via Google Sign-In and
-              server-side Firebase ID token verification.
-            </p>
-          </div>
-          <div>
-            <ButtonLink href="/staff/login" variant="secondary" size="sm">
-              <Icon name="lock" size="sm" />
-              Open Staff Sign-In (/staff/login)
-            </ButtonLink>
-          </div>
-        </div>
-      </div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 font-medium text-[var(--mf-text-secondary)] no-underline hover:text-[var(--mf-text)] hover:underline"
+        >
+          <Icon name="arrowLeft" size="sm" />
+          <span>Return Home</span>
+        </Link>
+      </nav>
     </section>
   );
 }
