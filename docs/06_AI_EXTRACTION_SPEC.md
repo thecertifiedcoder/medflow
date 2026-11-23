@@ -1,5 +1,8 @@
 # MedFlow — AI Clinical Context Extraction Specification
 
+> **Current implementation note (2026-11-23):** Clinical brief extraction runs server-side with Gemini as the primary provider, followed by the configured Gemini fallback model and an optional OpenRouter `openrouter/free` text-only fallback. Voice transcription remains Gemini-only. All provider output enters the same strict parsing, Zod validation and exact-substring quote-grounding path. OpenRouter is a fallback for synthetic hackathon data only; it must not be used for real patient information.
+
+
 ## 1. Responsibility boundary
 
 The AI converts a patient-confirmed narrative into structured information for a human reviewer. It must not diagnose, prescribe, predict outcomes, autonomously assign clinical urgency, tell patients they are safe, or recommend delaying care.
