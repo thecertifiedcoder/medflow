@@ -27,7 +27,7 @@ List planning, research, documentation and review/preparation of the founder-pro
 
 ## AI tools disclosure
 
-Complete with actual usage before submission.
+Tool contributions are recorded below. Confirm these entries with all contributors and add only tools actually used before submission.
 
 | Tool | What it was used for | Human review / responsibility |
 |---|---|---|
@@ -35,11 +35,10 @@ Complete with actual usage before submission.
 | Google AI Studio Build agent | Application generation/refactoring, PostgreSQL/Drizzle implementation, UI work, debugging and test authoring | Team reviews and tests generated changes; AI Studio reports are not independent external certification |
 | Google Gemini API | Runtime voice transcription and primary clinical-context extraction | Server-side provider; output is non-authoritative and validated before use |
 | OpenRouter | Optional runtime text-extraction fallback through `openrouter/free` | Synthetic demonstration content only; provider/model availability and data handling may vary |
-| Claude or another assistant | Include only if a team member actually used it for this project; record the exact contribution | Confirm with contributors before public submission |
 
 ## Third-party services and dependencies
 
-Record the exact services, SDKs, libraries, datasets and assets used, including licences and attribution where required.
+Runtime services and principal dependencies present in the current application:
 
 - **Next.js (App Router) & React** — Application framework and UI runtime.
 - **Firebase Authentication (`firebase`, `firebase-admin`)** — Staff Google Sign-In identity provider (same-origin `/__/auth/*` proxy) and server-side ID-token signature/claim verification (Cloud Firestore fully decommissioned in Phase 1D-3).
