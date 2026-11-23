@@ -1,5 +1,8 @@
 # MedFlow — Hackathon MVP Scope and Acceptance Criteria
 
+> **Final hackathon access decision (2026-11-23):** The judge-facing experience is clinical-only. Public entry is `/demo` labelled **Judge Access**, which creates the existing Demo Clinical Staff session and opens `/staff/queue`. The normal staff-login and administrator pages are not part of the judge journey; their page routes redirect, while backend authorization boundaries remain intact. This changes the public access presentation, not the underlying clinical workflow requirements.
+
+
 ## 1. Product boundary
 
 The hackathon MVP is a web application with two primary experiences:
