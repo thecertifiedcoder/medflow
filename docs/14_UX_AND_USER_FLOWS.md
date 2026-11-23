@@ -1,5 +1,8 @@
 # MedFlow — UX, User Flows and Screen Specification
 
+> **Current implemented hackathon route override (2026-11-23):** Public entry uses **Judge Access** at `/demo` and a single **Enter Clinical Workspace** action to reach `/staff/queue`. Public navigation does not expose Administrator Workspace or normal Staff Sign-In. The underlying route handlers and authorization controls remain in the repository; direct page visits to `/staff/login` and `/staff/admin` redirect to the judge/clinical experience. Treat the older multi-role screen inventory below as historical product planning where it differs from this final hackathon route.
+
+
 **Document ID:** MED-UX-014  
 **Version:** 0.1  
 **Status:** Hackathon UX baseline — visual implementation follows the single HTML design-system file attached to the AI Studio conversation  
